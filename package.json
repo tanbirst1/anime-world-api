@@ -1,10 +1,1 @@
-{
-  "name": "watchanimeworld-api",
-  "version": "1.0.0",
-  "type": "module",
-  "dependencies": {
-    "axios": "^1.7.2",
-    "cheerio": "^1.0.0-rc.12",
-    "@vercel/node": "^2.0.0"
-  }
-}
+{ "name": "animeworld-vercel-api", "version": "1.0.0", "dependencies": { "cheerio": "^1.0.0-rc.12", "node-fetch": "^3.3.2" } }
