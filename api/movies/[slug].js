@@ -10,7 +10,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: "Slug missing" });
     }
 
-    // ✅ Read base URL (fallback to default)
+    // ✅ Base URL from file or fallback
     const baseUrlPath = path.join(process.cwd(), "src", "base_url.txt");
     const baseUrl = fs.existsSync(baseUrlPath)
       ? fs.readFileSync(baseUrlPath, "utf8").trim()
@@ -18,22 +18,51 @@ export default async function handler(req, res) {
 
     const movieUrl = `${baseUrl}/movies/${slug}/`;
 
-    // 🔍 Fetch page
+    // 🔍 Fetch HTML
     const { data: html } = await axios.get(movieUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "en-US,en;q=0.9"
-      }
+      headers: { "User-Agent": "Mozilla/5.0" }
     });
 
     const $ = cheerio.load(html);
 
-    // 🎯 Extract Movie Data
+    // 🎯 Extract movie details
     const title =
       $("h1.entry-title").text().trim() ||
       $("meta[property='og:title']").attr("content") ||
       slug;
 
+    const poster =
+      $("div.post-thumbnail img").attr("src") ||
+      $("meta[property='og:image']").attr("content");
+
+    const description =
+      $("div.entry-content p").first().text().trim() ||
+      $("meta[property='og:description']").attr("content");
+
+    const genres = [];
+    $("span.cat-links a").each((_, el) => genres.push($(el).text().trim()));
+
+    const links = [];
+    $("a").each((_, el) => {
+      const link = $(el).attr("href");
+      const text = $(el).text().trim();
+      if (link && text && /download|watch|episode/i.test(text)) {
+        links.push({ name: text, url: link });
+      }
+    });
+
+    return res.status(200).json({
+      title,
+      poster,
+      description,
+      genres,
+      links,
+      source: movieUrl
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "Scraper failed", detail: err.message });
+  }
+}
     const poster =
       $("div.post-thumbnail img").attr("src") ||
       $("meta[property='og:image']").attr("content");
