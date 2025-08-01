@@ -73,11 +73,14 @@ export default async function handler(req, res) {
       if (title) newAnimeArrivals.push({ title, link, image });
     });
 
-    // --- Just In: Cartoon Series (FIXED dynamic ID problem) ---
+    // --- Just In: Cartoon Series (Fixed to detect section-title text)
     let cartoonSeries = [];
     $('h3.section-title').each((_, el) => {
-      if ($(el).text().trim() === "Just In: Cartoon Series") {
-        $(el).closest('.rw').nextAll('.swiper-container').first().find('.swiper-slide').each((i2, el2) => {
+      const sectionTitle = $(el).text().trim();
+      if (sectionTitle.includes("Just In: Cartoon Series")) {
+        // Find the nearest swiper-container after this header
+        const swiper = $(el).parent().parent().nextAll('.swiper-container').first();
+        swiper.find('.swiper-slide').each((i2, el2) => {
           const title = $(el2).find('.entry-title').text().trim();
           let link = $(el2).find('a.lnk-blk').attr('href') || '';
           let image = $(el2).find('img').attr('src') || $(el2).find('img').attr('data-src');
