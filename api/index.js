@@ -17,40 +17,24 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Spotlight (Slider)
-    let spotlight = [];
-    $('.swiper-slide').each((i, el) => {
-      const title = $(el).find('.slide-title').text().trim();
-      const link = $(el).find('a').attr('href');
-      const image = $(el).find('img').attr('src');
-      if (title) spotlight.push({ title, link, image });
-    });
+    let newestDrops = [];
+    $('.swiper-slide.latest-ep-swiper-slide').each((i, el) => {
+      const title = $(el).find('.entry-title').text().trim();
+      const link = $(el).find('a.lnk-blk').attr('href');
+      let image = $(el).find('img').attr('src') || $(el).find('img').attr('data-src');
+      if (image && image.startsWith('//')) image = 'https:' + image;
+      const season = $(el).find('.post-ql').text().trim();
+      const episodes = $(el).find('.year').text().trim();
 
-    // Latest Episodes
-    let latestEpisodes = [];
-    $('.episodes-card').each((i, el) => {
-      const title = $(el).find('.ep-title').text().trim();
-      const link = $(el).find('a').attr('href');
-      const image = $(el).find('img').attr('src');
-      const episode = $(el).find('.ep-num').text().trim();
-      if (title) latestEpisodes.push({ title, link, episode, image });
-    });
-
-    // Popular Section
-    let popular = [];
-    $('.popular-card').each((i, el) => {
-      const title = $(el).find('.pop-title').text().trim();
-      const link = $(el).find('a').attr('href');
-      const image = $(el).find('img').attr('src');
-      if (title) popular.push({ title, link, image });
+      if (title) {
+        newestDrops.push({ title, link, image, season, episodes });
+      }
     });
 
     res.status(200).json({
       status: "ok",
       source: targetURL,
-      spotlight,
-      latestEpisodes,
-      popular
+      newestDrops
     });
 
   } catch (err) {
