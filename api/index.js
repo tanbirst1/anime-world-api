@@ -6,18 +6,18 @@ export default async function handler(req, res) {
     const targetURL = "https://watchanimeworld.in/";
     const response = await fetch(targetURL, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; VercelBot/1.0)"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
       }
     });
 
     if (!response.ok) {
-      return res.status(500).json({ error: "Failed to fetch AnimeWorld" });
+      return res.status(500).json({ error: `Fetch failed: ${response.status}` });
     }
 
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Extract Slider / Spotlight
+    // Spotlight (Slider)
     let spotlight = [];
     $('.swiper-slide').each((i, el) => {
       const title = $(el).find('.slide-title').text().trim();
@@ -36,7 +36,7 @@ export default async function handler(req, res) {
       if (title) latestEpisodes.push({ title, link, episode, image });
     });
 
-    // Popular / Recommended
+    // Popular Section
     let popular = [];
     $('.popular-card').each((i, el) => {
       const title = $(el).find('.pop-title').text().trim();
@@ -56,4 +56,4 @@ export default async function handler(req, res) {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-        }
+}
