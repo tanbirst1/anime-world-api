@@ -51,7 +51,7 @@ export default async function handler(req, res) {
       if (title) newestDrops.push({ title, link, image, season, episodes });
     });
 
-    // --- Most Watched Shows ---
+    // --- Most Watched Shows (with ranking) ---
     let mostWatched = [];
     $('#torofilm_wdgt_popular-3 .top-picks__item').each((i, el) => {
       let link = $(el).find('a.item__card').attr('href') || '';
@@ -59,7 +59,7 @@ export default async function handler(req, res) {
       if (image?.startsWith('//')) image = 'https:' + image;
       if (link.startsWith(baseURL)) link = link.replace(baseURL, '');
       const title = $(el).find('img').attr('alt').replace('Image ', '').trim();
-      if (title) mostWatched.push({ title, link, image });
+      if (title) mostWatched.push({ rank: i + 1, title, link, image });
     });
 
     // --- New Anime Arrivals ---
@@ -73,12 +73,24 @@ export default async function handler(req, res) {
       if (title) newAnimeArrivals.push({ title, link, image });
     });
 
+    // --- Just In: Cartoon Series ---
+    let cartoonSeries = [];
+    $('#swiper-wrapper-bac56ac10a5ee610d .swiper-slide').each((i, el) => {
+      const title = $(el).find('.entry-title').text().trim();
+      let link = $(el).find('a.lnk-blk').attr('href') || '';
+      let image = $(el).find('img').attr('src') || $(el).find('img').attr('data-src');
+      if (image?.startsWith('//')) image = 'https:' + image;
+      if (link.startsWith(baseURL)) link = link.replace(baseURL, '');
+      if (title) cartoonSeries.push({ title, link, image });
+    });
+
     res.status(200).json({
       status: "ok",
       base: baseURL,
       newestDrops,
       mostWatched,
-      newAnimeArrivals
+      newAnimeArrivals,
+      cartoonSeries
     });
 
   } catch (err) {
