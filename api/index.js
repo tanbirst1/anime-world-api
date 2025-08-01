@@ -5,11 +5,11 @@ import path from 'path';
 
 export default async function handler(req, res) {
   try {
-    // Read base URL
+    // Read base URL from src/base_url.txt
     const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
     const baseURL = fs.readFileSync(basePath, 'utf8').trim();
 
-    // Get Cloudflare cookies
+    // Get Cloudflare cookies (optional, helps avoid blocks)
     let cookieHeaders = '';
     const homeResp = await fetch(baseURL, {
       headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
@@ -17,7 +17,7 @@ export default async function handler(req, res) {
     const setCookies = homeResp.headers.get('set-cookie');
     if (setCookies) cookieHeaders = setCookies.split(',').map(c => c.split(';')[0]).join('; ');
 
-    // Fetch homepage with cookies
+    // Fetch homepage HTML with cookies
     const response = await fetch(baseURL + '/', {
       headers: {
         "User-Agent": "Mozilla/5.0",
@@ -30,48 +30,71 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Helper function for swiper sections
+    // Helper: Clean link (make relative from baseURL)
+    function cleanLink(link) {
+      if (!link) return '';
+      if (link.startsWith(baseURL)) return link.replace(baseURL, '');
+      return link;
+    }
+
+    // Helper: Fix image URL (add https: if starts with //)
+    function fixImage(src) {
+      if (!src) return '';
+      if (src.startsWith('//')) return 'https:' + src;
+      return src;
+    }
+
+    // Scrape Swiper-based sections (Newest Drops, New Anime Arrivals, Cartoon Series, Latest Anime Movies)
     function scrapeSwiperSection(titleMatch) {
-      let sectionData = [];
+      let data = [];
       $('h3.section-title').each((_, el) => {
-        const titleText = $(el).text().trim();
-        if (titleText.includes(titleMatch)) {
-          const swiper = $(el).closest('header').nextAll('.swiper-container').first();
-          swiper.find('.swiper-slide').each((i, el2) => {
-            const title = $(el2).find('.entry-title').text().trim();
-            let link = $(el2).find('a.lnk-blk').attr('href') || '';
-            let image = $(el2).find('img').attr('src') || $(el2).find('img').attr('data-src');
-            if (image?.startsWith('//')) image = 'https:' + image;
-            if (link.startsWith(baseURL)) link = link.replace(baseURL, '');
-            if (title) sectionData.push({ title, link, image });
+        const headingText = $(el).text().trim();
+        if (headingText.includes(titleMatch)) {
+          // Find the closest parent section or div that contains swiper-container(s)
+          const parent = $(el).closest('header').parent();
+          // Search recursively inside the parent for any .swiper-container
+          parent.find('.swiper-container').first().find('.swiper-slide').each((i, slide) => {
+            const title = $(slide).find('.entry-title').text().trim();
+            let link = $(slide).find('a.lnk-blk').attr('href');
+            let image = $(slide).find('img').attr('src') || $(slide).find('img').attr('data-src');
+            link = cleanLink(link);
+            image = fixImage(image);
+            if (title) data.push({ title, link, image });
           });
         }
       });
-      return sectionData;
+      return data;
     }
 
-    // Helper function for Top Picks layout
-    function scrapeTopPicks(widgetId) {
-      let sectionData = [];
-      $(`#${widgetId} .top-picks__item`).each((i, el) => {
-        let link = $(el).find('a.item__card').attr('href') || '';
-        let image = $(el).find('img').attr('src');
-        if (image?.startsWith('//')) image = 'https:' + image;
-        if (link.startsWith(baseURL)) link = link.replace(baseURL, '');
-        const title = $(el).find('img').attr('alt').replace('Image ', '').trim();
-        if (title) sectionData.push({ rank: i + 1, title, link, image });
+    // Scrape Top-Picks based sections (Most-Watched Shows, Most-Watched Films)
+    function scrapeTopPicksByHeading(headingText) {
+      let data = [];
+      $('h3.widget-title').each((_, el) => {
+        const hText = $(el).text().trim();
+        if (hText.includes(headingText)) {
+          const container = $(el).closest('.widget');
+          container.find('.top-picks__item').each((i, el2) => {
+            let link = $(el2).find('a.item__card').attr('href');
+            let image = $(el2).find('img').attr('src');
+            const title = $(el2).find('img').attr('alt')?.replace('Image ', '').trim();
+            link = cleanLink(link);
+            image = fixImage(image);
+            if (title) data.push({ rank: i + 1, title, link, image });
+          });
+        }
       });
-      return sectionData;
+      return data;
     }
 
-    // Sections
-    let newestDrops = scrapeSwiperSection("Newest Drops");
-    let mostWatchedShows = scrapeTopPicks("torofilm_wdgt_popular-3");
-    let mostWatchedFilms = scrapeTopPicks("torofilm_wdgt_popular-2"); // ✅ Fixed
-    let newAnimeArrivals = scrapeSwiperSection("New Anime Arrivals");
-    let cartoonSeries = scrapeSwiperSection("Just In: Cartoon Series");
-    let latestAnimeMovies = scrapeSwiperSection("Latest Anime Movies");
+    // Collect all sections
+    const newestDrops = scrapeSwiperSection("Newest Drops");
+    const mostWatchedShows = scrapeTopPicksByHeading("Most-Watched Shows");
+    const mostWatchedFilms = scrapeTopPicksByHeading("Most-Watched Films");
+    const newAnimeArrivals = scrapeSwiperSection("New Anime Arrivals");
+    const cartoonSeries = scrapeSwiperSection("Just In: Cartoon Series");
+    const latestAnimeMovies = scrapeSwiperSection("Latest Anime Movies");
 
+    // Send JSON response
     res.status(200).json({
       status: "ok",
       base: baseURL,
@@ -80,10 +103,10 @@ export default async function handler(req, res) {
       mostWatchedFilms,
       newAnimeArrivals,
       cartoonSeries,
-      latestAnimeMovies
+      latestAnimeMovies,
     });
 
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 }
