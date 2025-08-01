@@ -73,15 +73,19 @@ export default async function handler(req, res) {
       if (title) newAnimeArrivals.push({ title, link, image });
     });
 
-    // --- Just In: Cartoon Series ---
+    // --- Just In: Cartoon Series (FIXED dynamic ID problem) ---
     let cartoonSeries = [];
-    $('#swiper-wrapper-bac56ac10a5ee610d .swiper-slide').each((i, el) => {
-      const title = $(el).find('.entry-title').text().trim();
-      let link = $(el).find('a.lnk-blk').attr('href') || '';
-      let image = $(el).find('img').attr('src') || $(el).find('img').attr('data-src');
-      if (image?.startsWith('//')) image = 'https:' + image;
-      if (link.startsWith(baseURL)) link = link.replace(baseURL, '');
-      if (title) cartoonSeries.push({ title, link, image });
+    $('h3.section-title').each((_, el) => {
+      if ($(el).text().trim() === "Just In: Cartoon Series") {
+        $(el).closest('.rw').nextAll('.swiper-container').first().find('.swiper-slide').each((i2, el2) => {
+          const title = $(el2).find('.entry-title').text().trim();
+          let link = $(el2).find('a.lnk-blk').attr('href') || '';
+          let image = $(el2).find('img').attr('src') || $(el2).find('img').attr('data-src');
+          if (image?.startsWith('//')) image = 'https:' + image;
+          if (link.startsWith(baseURL)) link = link.replace(baseURL, '');
+          if (title) cartoonSeries.push({ title, link, image });
+        });
+      }
     });
 
     res.status(200).json({
