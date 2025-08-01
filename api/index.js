@@ -30,14 +30,13 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Helper function to scrape by section title
-    function scrapeSection(titleMatch) {
+    // Helper function for swiper sections
+    function scrapeSwiperSection(titleMatch) {
       let sectionData = [];
       $('h3.section-title').each((_, el) => {
         const titleText = $(el).text().trim();
         if (titleText.includes(titleMatch)) {
-          // Find nearest swiper-container after this h3
-          const swiper = $(el).parent().parent().nextAll().find('.swiper-container').first();
+          const swiper = $(el).closest('header').nextAll('.swiper-container').first();
           swiper.find('.swiper-slide').each((i, el2) => {
             const title = $(el2).find('.entry-title').text().trim();
             let link = $(el2).find('a.lnk-blk').attr('href') || '';
@@ -51,24 +50,36 @@ export default async function handler(req, res) {
       return sectionData;
     }
 
-    // Existing sections
-    let newestDrops = scrapeSection("Newest Drops");
-    let mostWatchedShows = scrapeSection("Most-Watched Shows");
-    let newAnimeArrivals = scrapeSection("New Anime Arrivals");
-    let cartoonSeries = scrapeSection("Just In: Cartoon Series");
+    // Helper function for Top Picks layout
+    function scrapeTopPicks(widgetId) {
+      let sectionData = [];
+      $(`#${widgetId} .top-picks__item`).each((i, el) => {
+        let link = $(el).find('a.item__card').attr('href') || '';
+        let image = $(el).find('img').attr('src');
+        if (image?.startsWith('//')) image = 'https:' + image;
+        if (link.startsWith(baseURL)) link = link.replace(baseURL, '');
+        const title = $(el).find('img').attr('alt').replace('Image ', '').trim();
+        if (title) sectionData.push({ rank: i + 1, title, link, image });
+      });
+      return sectionData;
+    }
 
-    // New sections requested
-    let mostWatchedFilms = scrapeSection("Most-Watched Films");
-    let latestAnimeMovies = scrapeSection("Latest Anime Movies");
+    // Sections
+    let newestDrops = scrapeSwiperSection("Newest Drops");
+    let mostWatchedShows = scrapeTopPicks("torofilm_wdgt_popular-3");
+    let mostWatchedFilms = scrapeTopPicks("torofilm_wdgt_popular-2"); // ✅ Fixed
+    let newAnimeArrivals = scrapeSwiperSection("New Anime Arrivals");
+    let cartoonSeries = scrapeSwiperSection("Just In: Cartoon Series");
+    let latestAnimeMovies = scrapeSwiperSection("Latest Anime Movies");
 
     res.status(200).json({
       status: "ok",
       base: baseURL,
       newestDrops,
       mostWatchedShows,
+      mostWatchedFilms,
       newAnimeArrivals,
       cartoonSeries,
-      mostWatchedFilms,
       latestAnimeMovies
     });
 
