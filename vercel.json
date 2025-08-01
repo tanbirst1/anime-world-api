@@ -11,10 +11,6 @@
     {
       "src": "^/series/(.*)$",
       "dest": "/api/series/$1"
-    },
-    {
-      "src": "^/$",
-      "dest": "/api/index.js"
     }
   ]
 }
