@@ -6,35 +6,83 @@ import path from 'path';
 export default async function handler(req, res) {
   try {
     const { slug } = req.query;
-    if (!slug) {
-      return res.status(400).json({ error: "Missing movie slug" });
-    }
+    if (!slug) return res.status(400).json({ error: "Missing movie slug" });
 
+    // Base URL
     const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
     const baseURL = fs.readFileSync(basePath, 'utf8').trim();
 
     // Step 1: Warm Cloudflare cookies
-    let cookieHeaders = '';
+    let cookies = '';
     const homeResp = await fetch(baseURL, {
+      headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
+    });
+    const setCookies = homeResp.headers.get('set-cookie');
+    if (setCookies) cookies = setCookies.split(',').map(c => c.split(';')[0]).join('; ');
+
+    // Step 2: Fetch Movie Page
+    const movieURL = `${baseURL}/movies/${slug}/`;
+    const resp = await fetch(movieURL, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-        "Accept": "text/html"
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html",
+        "Referer": baseURL + "/",
+        "Cookie": cookies
+      }
+    });
+    if (!resp.ok) return res.status(resp.status).json({ error: `Movie fetch failed: ${resp.status}` });
+
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    // Detect homepage redirect
+    if ($('h3.section-title').first().text().includes("Newest Drops")) {
+      return res.status(404).json({ error: "Movie not found or redirected" });
+    }
+
+    // Movie info
+    let title = $('h1.entry-title').text().trim();
+    let poster = $('article.post.single img').first().attr('src');
+    if (poster?.startsWith('//')) poster = 'https:' + poster;
+    let description = $('.description p').text().trim();
+    let duration = $('.duration .overviewCss').text().trim();
+    let year = $('.year .overviewCss').text().trim();
+
+    // Genres & Languages
+    let genres = [];
+    $('.genres a').each((i, el) => genres.push($(el).text().trim()));
+    let languages = [];
+    $('.loadactor a').each((i, el) => languages.push($(el).text().trim()));
+
+    // Servers
+    let servers = [];
+    $('.aa-tbs-video li a').each((i, el) => {
+      let serverName = $(el).find('.server').text().trim() || `Server ${i+1}`;
+      let frameId = $(el).attr('href');
+      if (frameId && frameId.startsWith('#')) {
+        let iframeSrc = $(`${frameId} iframe`).attr('src') || $(`${frameId} iframe`).attr('data-src');
+        if (iframeSrc?.startsWith('//')) iframeSrc = 'https:' + iframeSrc;
+        servers.push({ name: serverName, url: iframeSrc });
       }
     });
 
-    if (!homeResp.ok) {
-      return res.status(500).json({ error: `Home page fetch failed: ${homeResp.status}` });
-    }
+    res.status(200).json({
+      status: "ok",
+      slug,
+      title,
+      poster,
+      description,
+      duration,
+      year,
+      genres,
+      languages,
+      servers
+    });
 
-    const setCookies = homeResp.headers.get('set-cookie');
-    if (setCookies) {
-      cookieHeaders = setCookies.split(',').map(c => c.split(';')[0]).join('; ');
-    }
-
-    // Step 2: Fetch movie page with cookies
-    const targetURL = `${baseURL}/movies/${slug}/`;
-    const resp = await fetch(targetURL, {
-      headers: {
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}      headers: {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
         "Accept": "text/html",
         "Referer": baseURL + "/",
