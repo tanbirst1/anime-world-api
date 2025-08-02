@@ -1,76 +1,76 @@
-import got from "got";
-import * as cheerio from "cheerio";
+import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
+import fs from 'fs';
+import path from 'path';
 
 export default async function handler(req, res) {
   try {
     const { slug } = req.query;
     if (!slug) {
-      return res.status(400).json({ error: "Slug missing" });
+      return res.status(400).json({ error: "Missing movie slug" });
     }
 
-    const baseUrl = "https://watchanimeworld.in";
-    const targetUrl = `${baseUrl}/movies/${slug}/`;
+    // Read base URL
+    const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
+    const baseURL = fs.readFileSync(basePath, 'utf8').trim();
 
-    let html;
-    try {
-      // Fetch only HTML text (8s timeout)
-      html = await got(targetUrl, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        timeout: { request: 8000 }
-      }).text();
-    } catch (err) {
-      return res.status(200).json({
-        error: "Failed to fetch page",
-        detail: err.message
-      });
+    // Step 1: Warm Cloudflare cookies
+    let cookieHeaders = '';
+    const homeResp = await fetch(baseURL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "text/html"
+      }
+    });
+    const setCookies = homeResp.headers.get('set-cookie');
+    if (setCookies) {
+      cookieHeaders = setCookies.split(',').map(c => c.split(';')[0]).join('; ');
     }
 
-    // Reduce memory: only keep section that contains main content
-    const sectionMatch = html.match(/(<main[\s\S]*?<\/main>)/i);
-    const cleanHtml = sectionMatch ? sectionMatch[1] : html;
-
-    let $;
-    try {
-      $ = cheerio.load(cleanHtml);
-    } catch (err) {
-      return res.status(200).json({
-        error: "Failed to parse HTML",
-        detail: err.message
-      });
-    }
-
-    const title = $("h1.entry-title").text().trim() || slug;
-    const poster = $("div.post-thumbnail img").attr("src") || null;
-    const description =
-      $("div.entry-content p").first().text().trim() || "No description";
-
-    const genres = [];
-    $("span.cat-links a").each((_, el) =>
-      genres.push($(el).text().trim())
-    );
-
-    const links = [];
-    $(".entry-content a").each((_, el) => {
-      const href = $(el).attr("href");
-      const text = $(el).text().trim();
-      if (href && /watch|download/i.test(text)) {
-        links.push({ name: text, url: href });
+    // Step 2: Fetch movie page
+    const targetURL = `${baseURL}/movies/${slug}/`;
+    const resp = await fetch(targetURL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "text/html",
+        "Referer": baseURL + "/",
+        "Cookie": cookieHeaders
       }
     });
 
-    return res.status(200).json({
-      type: "movie",
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    // Detect homepage redirect
+    if ($('h3.section-title').first().text().includes("Newest Drops")) {
+      return res.status(404).json({ error: "Movie not found or redirected to homepage" });
+    }
+
+    // Movie details
+    const title = $('h1.entry-title').text().trim();
+    let poster = $('.poster img').attr('src') || $('.poster img').attr('data-src');
+    if (poster?.startsWith('//')) poster = 'https:' + poster;
+    const description = $('.entry-content p').first().text().trim();
+
+    // Download/Watch links
+    let links = [];
+    $('.entry-content a').each((i, el) => {
+      let linkText = $(el).text().trim();
+      let linkHref = $(el).attr('href');
+      if (linkHref?.startsWith(baseURL)) linkHref = './' + linkHref.replace(baseURL, '').replace(/^\/+/, '');
+      if (linkHref) links.push({ name: linkText, url: linkHref });
+    });
+
+    res.status(200).json({
+      status: "ok",
+      slug,
       title,
       poster,
       description,
-      genres,
-      links,
-      source: targetUrl
+      links
     });
+
   } catch (err) {
-    return res.status(200).json({
-      error: "Movies API crashed",
-      detail: err.message
-    });
+    res.status(500).json({ error: err.message });
   }
 }
