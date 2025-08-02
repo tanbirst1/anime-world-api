@@ -1,4 +1,4 @@
-import axios from "axios";
+import got from "got";
 import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
@@ -6,49 +6,34 @@ export default async function handler(req, res) {
     const { slug } = req.query;
     if (!slug) return res.status(400).json({ error: "Slug missing" });
 
-    const baseUrl = "https://watchanimeworld.in";
-    const movieUrl = `${baseUrl}/movies/${slug}/`;
+    const url = `https://watchanimeworld.in/movies/${slug}/`;
 
-    const { data } = await axios.get(movieUrl, {
-      timeout: 8000,
-      headers: { "User-Agent": "Mozilla/5.0" }
-    });
+    let html;
+    try {
+      html = await got(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+        timeout: { request: 8000 }
+      }).text();
+    } catch (fetchErr) {
+      return res.status(200).json({ error: "Failed to fetch page", detail: fetchErr.message });
+    }
 
-    const $ = cheerio.load(data);
+    let $;
+    try {
+      $ = cheerio.load(html);
+    } catch (parseErr) {
+      return res.status(200).json({ error: "Failed to parse HTML" });
+    }
 
     const title = $("h1.entry-title").text().trim() || slug;
     const poster = $("div.post-thumbnail img").attr("src") || null;
     const description = $("div.entry-content p").first().text().trim() || null;
 
-    const genres = [];
-    $("span.cat-links a").each((_, el) => genres.push($(el).text().trim()));
-
     const links = [];
-    $("a").each((_, el) => {
-      try {
-        const link = $(el).attr("href");
-        const text = $(el).text().trim();
-        if (link && /download|watch/i.test(text)) links.push({ name: text, url: link });
-      } catch {}
-    });
-
-    res.status(200).json({ title, poster, description, genres, links, source: movieUrl });
-  } catch (err) {
-    res.status(200).json({ error: "Movie fetch failed", detail: err.message });
-  }
-}
-    const description =
-      $("div.entry-content p").first().text().trim() ||
-      $("meta[property='og:description']").attr("content");
-
-    const genres = [];
-    $("span.cat-links a").each((_, el) => genres.push($(el).text().trim()));
-
-    const links = [];
-    $("a").each((_, el) => {
+    $(".entry-content a").each((_, el) => {
       const link = $(el).attr("href");
       const text = $(el).text().trim();
-      if (link && text && /download|watch|episode/i.test(text)) {
+      if (link && /watch|download/i.test(text)) {
         links.push({ name: text, url: link });
       }
     });
@@ -57,52 +42,10 @@ export default async function handler(req, res) {
       title,
       poster,
       description,
-      genres,
       links,
-      source: movieUrl
+      source: url
     });
   } catch (err) {
-    return res.status(500).json({ error: "Scraper failed", detail: err.message });
-  }
-}
-    const poster =
-      $("div.post-thumbnail img").attr("src") ||
-      $("meta[property='og:image']").attr("content");
-
-    const description =
-      $("div.entry-content p").first().text().trim() ||
-      $("meta[property='og:description']").attr("content");
-
-    // 🎯 Episodes / Download Links
-    const episodes = [];
-    $("a").each((_, el) => {
-      const link = $(el).attr("href");
-      const text = $(el).text().trim();
-      if (link && text && /download|watch|episode/i.test(text)) {
-        episodes.push({ name: text, url: link });
-      }
-    });
-
-    // 🎯 Genres
-    const genres = [];
-    $("span.cat-links a").each((_, el) => {
-      genres.push($(el).text().trim());
-    });
-
-    // ✅ Respond even if some fields are missing
-    return res.status(200).json({
-      title,
-      poster,
-      description,
-      genres,
-      episodes,
-      movieUrl
-    });
-  } catch (err) {
-    console.error("Error scraping movie:", err.message);
-    return res.status(500).json({
-      error: "Failed to fetch movie data",
-      detail: err.message
-    });
+    return res.status(200).json({ error: "Movies handler crashed", detail: err.message });
   }
 }
