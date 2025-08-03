@@ -7,12 +7,18 @@
       "maxDuration": 20
     }
   },
-  "builds": [
-    { "src": "api/**/*.js", "use": "@vercel/node" }
-  ],
   "routes": [
-    { "src": "/movies/(?<slug>.*)", "dest": "/api/movies/[slug]" },
-    { "src": "/series/(?<slug>.*)", "dest": "/api/series/[slug]" },
-    { "src": "/", "dest": "/api/index" }
+    {
+      "src": "/movies/(?<slug>.*)",
+      "dest": "/api/movies/[slug].js"
+    },
+    {
+      "src": "/series/(?<slug>.*)",
+      "dest": "/api/series/[slug].js"
+    },
+    {
+      "src": "/",
+      "dest": "/api/index.js"
+    }
   ]
 }
