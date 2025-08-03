@@ -5,16 +5,17 @@ import path from 'path';
 
 export default async function handler(req, res) {
   try {
-    const { slug } = req.query;
+    // Extract slug (works in Vercel dynamic routes)
+    const slug = req.query.slug || (req.query[0] || '').trim();
     if (!slug) {
       return res.status(400).json({ error: "Missing movie slug" });
     }
 
-    // Read base URL
+    // Read base URL from file
     const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
     const baseURL = fs.readFileSync(basePath, 'utf8').trim();
 
-    // Step 1: Get Cloudflare cookies
+    // Get Cloudflare cookies
     let cookieHeaders = '';
     const homeResp = await fetch(baseURL, {
       headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
@@ -24,7 +25,7 @@ export default async function handler(req, res) {
       cookieHeaders = setCookies.split(',').map(c => c.split(';')[0]).join('; ');
     }
 
-    // Step 2: Fetch movie page
+    // Fetch movie page
     const movieURL = `${baseURL}/movies/${slug}/`;
     const resp = await fetch(movieURL, {
       headers: {
@@ -42,12 +43,12 @@ export default async function handler(req, res) {
     const html = await resp.text();
     const $ = cheerio.load(html);
 
-    // Detect homepage redirect (Cloudflare block)
+    // Detect homepage redirect
     if ($('h3.section-title').first().text().includes("Newest Drops")) {
       return res.status(404).json({ error: "Movie not found or redirected to homepage" });
     }
 
-    // Scrape movie details
+    // Scrape movie info
     const title = $('h1.entry-title').text().trim();
     let poster = $('article.post.single img').attr('src');
     if (poster?.startsWith('//')) poster = 'https:' + poster;
@@ -63,7 +64,6 @@ export default async function handler(req, res) {
     const duration = $('.duration .overviewCss').text().trim();
     const year = $('.year .overviewCss').text().trim();
 
-    // Scrape video servers
     let servers = [];
     $('.aa-tbs-video li a').each((i, el) => {
       const serverName = $(el).find('.server').text().trim() || `Server ${i+1}`;
@@ -73,7 +73,6 @@ export default async function handler(req, res) {
       servers.push({ server: serverName, url: iframeSrc });
     });
 
-    // Return JSON
     res.status(200).json({
       status: "ok",
       slug,
