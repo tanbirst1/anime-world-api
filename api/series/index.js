@@ -1,58 +1,36 @@
-import fetch from "node-fetch";
+import axios from "axios";
 import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
+  const { slug } = req.query;
+  if (!slug) {
+    return res.status(400).json({ success: false, error: "Missing slug parameter" });
+  }
+
+  const targetUrl = `https://watchanimeworld.in/series/${slug}`;
+
   try {
-    let { page } = req.query;
-    if (!page) page = 1;
-
-    const baseURL = "https://watchanimeworld.in";
-    const targetURL = page == 1
-      ? `${baseURL}/series/`
-      : `${baseURL}/series/page/${page}/`;
-
-    // Fetch HTML
-    const response = await fetch(targetURL, {
+    const { data: html } = await axios.get(targetUrl, {
       headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "text/html"
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
       }
     });
 
-    if (!response.ok) {
-      return res.status(500).json({ error: `Failed to fetch: ${response.status}` });
-    }
-
-    const html = await response.text();
     const $ = cheerio.load(html);
-
-    let seriesList = [];
-
-    $(".post").each((i, el) => {
-      const title = $(el).find(".entry-title").text().trim();
-      let link = $(el).find("a").attr("href");
-      let image = $(el).find("img").attr("src") || $(el).find("img").attr("data-src");
-
-      if (link?.startsWith("//")) link = "https:" + link;
-      if (image?.startsWith("//")) image = "https:" + image;
-
-      if (title) {
-        seriesList.push({
-          title,
-          link,
-          image
-        });
-      }
-    });
+    const title = $("h1.entry-title").text().trim();
+    const description = $(".entry-content p").first().text().trim();
 
     res.status(200).json({
-      status: "ok",
-      page,
-      total: seriesList.length,
-      series: seriesList
+      success: true,
+      slug,
+      title,
+      description
     });
-
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({
+      success: false,
+      error: err.message
+    });
   }
 }
