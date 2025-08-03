@@ -1,23 +1,21 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/**/*.js", "use": "@vercel/node" }
-  ],
+  "functions": {
+    "api/**/*.js": {
+      "runtime": "nodejs18.x"
+    }
+  },
   "routes": [
     {
-      "src": "^/series/page/([0-9]+)$",
-      "dest": "/api/series/page/[page].js?page=$1"
+      "src": "/movies",
+      "dest": "/api/movies/index.js"
     },
     {
-      "src": "^/series/([^/]+)$",
-      "dest": "/api/series/[slug].js?slug=$1"
+      "src": "/series",
+      "dest": "/api/series/index.js"
     },
     {
-      "src": "^/movies/([^/]+)$",
-      "dest": "/api/movies/[slug].js?slug=$1"
-    },
-    {
-      "src": "^/$",
+      "src": "/",
       "dest": "/api/index.js"
     }
   ]
