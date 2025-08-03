@@ -6,7 +6,7 @@
     }
   },
   "routes": [
-    { "src": "^/series/(.*)$", "dest": "api/series/[slug].js" },
-    { "src": "^/movies/(.*)$", "dest": "api/movies/[slug].js" }
+    { "src": "/series/(?<slug>[^/]+)", "dest": "api/series/[slug].js" },
+    { "src": "/movies/(?<slug>[^/]+)", "dest": "api/movies/[slug].js" }
   ]
 }
