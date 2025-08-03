@@ -5,20 +5,8 @@
   ],
   "routes": [
     {
-      "src": "^/series/page/([0-9]+)$",
-      "dest": "/api/series/page/[page].js?page=$1"
-    },
-    {
-      "src": "^/series/([^/]+)$",
-      "dest": "/api/series/[slug].js?slug=$1"
-    },
-    {
-      "src": "^/movies/([^/]+)$",
-      "dest": "/api/movies/[slug].js?slug=$1"
-    },
-    {
-      "src": "^/$",
-      "dest": "/api/index.js"
+      "src": "^/series$",
+      "dest": "/api/series/index.js"
     }
   ]
 }
