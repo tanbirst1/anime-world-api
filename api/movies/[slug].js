@@ -1,36 +1,93 @@
+import fetch from 'node-fetch';
+import * as cheerio from 'cheerio';
+import fs from 'fs';
+import path from 'path';
+
 export default async function handler(req, res) {
   try {
     const { slug } = req.query;
     if (!slug) {
-      return res.status(400).json({ error: "Slug missing" });
+      return res.status(400).json({ error: "Missing movie slug" });
     }
 
-    // Base URL (can later be read from /src/base_url.txt if needed)
-    const baseURL = "https://watchanimeworld.in";
-    const targetURL = `${baseURL}/movies/${slug}/`;
+    // Read base URL
+    const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
+    const baseURL = fs.readFileSync(basePath, 'utf8').trim();
 
-    // Fake browser headers
-    const headers = {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-      "Accept-Language": "en-US,en;q=0.9",
-      "Referer": baseURL + "/",
-      "Connection": "keep-alive"
-    };
-
-    // Fetch page
-    const response = await fetch(targetURL, { headers });
-    if (!response.ok) {
-      return res.status(response.status).json({ error: `Failed to fetch movie page (${response.status})` });
+    // Step 1: Get Cloudflare cookies
+    let cookieHeaders = '';
+    const homeResp = await fetch(baseURL, {
+      headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
+    });
+    const setCookies = homeResp.headers.get('set-cookie');
+    if (setCookies) {
+      cookieHeaders = setCookies.split(',').map(c => c.split(';')[0]).join('; ');
     }
 
-    const html = await response.text();
+    // Step 2: Fetch movie page
+    const movieURL = `${baseURL}/movies/${slug}/`;
+    const resp = await fetch(movieURL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html",
+        "Cookie": cookieHeaders,
+        "Referer": baseURL + "/"
+      }
+    });
 
-    // 🔍 Instead of parsing everything, test output like CF Worker
-    return res.status(200).send(html);
+    if (!resp.ok) {
+      return res.status(resp.status).json({ error: `Failed to fetch movie page (${resp.status})` });
+    }
+
+    const html = await resp.text();
+    const $ = cheerio.load(html);
+
+    // Detect homepage redirect (Cloudflare block)
+    if ($('h3.section-title').first().text().includes("Newest Drops")) {
+      return res.status(404).json({ error: "Movie not found or redirected to homepage" });
+    }
+
+    // Scrape movie details
+    const title = $('h1.entry-title').text().trim();
+    let poster = $('article.post.single img').attr('src');
+    if (poster?.startsWith('//')) poster = 'https:' + poster;
+
+    const description = $('.description p').first().text().trim();
+
+    const genres = [];
+    $('.genres a').each((_, el) => genres.push($(el).text().trim()));
+
+    const languages = [];
+    $('.loadactor a').each((_, el) => languages.push($(el).text().trim()));
+
+    const duration = $('.duration .overviewCss').text().trim();
+    const year = $('.year .overviewCss').text().trim();
+
+    // Scrape video servers
+    let servers = [];
+    $('.aa-tbs-video li a').each((i, el) => {
+      const serverName = $(el).find('.server').text().trim() || `Server ${i+1}`;
+      const href = $(el).attr('href');
+      const frameId = href?.replace('#', '');
+      const iframeSrc = $(`${frameId} iframe`).attr('src') || $(`${frameId} iframe`).attr('data-src');
+      servers.push({ server: serverName, url: iframeSrc });
+    });
+
+    // Return JSON
+    res.status(200).json({
+      status: "ok",
+      slug,
+      title,
+      poster,
+      description,
+      genres,
+      languages,
+      duration,
+      year,
+      servers
+    });
 
   } catch (err) {
-    console.error("Movies error:", err);
-    return res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 }
