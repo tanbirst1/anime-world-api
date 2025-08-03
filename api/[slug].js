@@ -1,57 +1,55 @@
-import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
-import fs from 'fs';
-import path from 'path';
+import axios from "axios";
+import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
+  const { slug } = req.query;
+  const targetUrl = `https://watchanimeworld.in/movies/${slug}`;
+
   try {
-    const { slug } = req.query; // comes from URL path
-    if (!slug) {
-      return res.status(400).json({ error: "Missing series slug" });
-    }
-
-    // Read base URL
-    const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
-    const baseURL = fs.readFileSync(basePath, 'utf8').trim();
-
-    // Build target URL
-    const targetURL = `${baseURL}/series/${slug}`;
-    const response = await fetch(targetURL, {
-      headers: { "User-Agent": "Mozilla/5.0" }
+    // Fetch HTML
+    const { data: html } = await axios.get(targetUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
+      }
     });
 
-    if (!response.ok) {
-      return res.status(500).json({ error: `Fetch failed: ${response.status}` });
-    }
-
-    const html = await response.text();
+    // Parse HTML
     const $ = cheerio.load(html);
 
-    // Series details
-    const title = $('h1.entry-title').text().trim();
-    let poster = $('.poster img').attr('src') || $('.poster img').attr('data-src');
-    if (poster?.startsWith('//')) poster = 'https:' + poster;
-    const description = $('.entry-content p').first().text().trim();
+    const title = $("h1.entry-title").text().trim();
+    const description = $(".entry-content p").first().text().trim();
+    const image = $(".entry-content img").first().attr("src");
 
-    // Episodes
-    let episodes = [];
-    $('.episodios .episodiotitle a').each((i, el) => {
-      let epTitle = $(el).text().trim();
-      let epLink = $(el).attr('href') || '';
-      if (epLink.startsWith(baseURL)) epLink = './' + epLink.replace(baseURL, '').replace(/^\/+/, '');
-      episodes.push({ title: epTitle, link: epLink });
+    // Collect genres if available
+    const genres = [];
+    $(".genres a").each((i, el) => {
+      genres.push($(el).text().trim());
+    });
+
+    // Collect download or streaming links
+    const links = [];
+    $("a").each((i, el) => {
+      const href = $(el).attr("href");
+      if (href && href.includes("http") && !href.includes("watchanimeworld.in")) {
+        links.push(href);
+      }
     });
 
     res.status(200).json({
-      status: "ok",
-      slug,
+      success: true,
+      source: targetUrl,
       title,
-      poster,
       description,
-      episodes
+      image,
+      genres,
+      links
     });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      url: targetUrl
+    });
   }
-      }
+}
