@@ -1,0 +1,27 @@
+import requests
+from bs4 import BeautifulSoup
+
+def handler(request):
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        }
+        resp = requests.get("https://watchanimeworld.in/", headers=headers)
+
+        if resp.status_code != 200:
+            return {
+                "statusCode": 500,
+                "body": f"Error: Status {resp.status_code}"
+            }
+
+        # Test pass
+        return {
+            "statusCode": 200,
+            "body": '{"success": true, "test": true}'
+        }
+
+    except Exception as e:
+        return {
+            "statusCode": 500,
+            "body": f"Error: {str(e)}"
+        }
