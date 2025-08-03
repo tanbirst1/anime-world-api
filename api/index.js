@@ -1,40 +1,22 @@
-import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
-import fs from 'fs';
-import path from 'path';
-
 export default async function handler(req, res) {
   try {
-    // Read base URL from src/base_url.txt
-    const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
-    const baseURL = fs.readFileSync(basePath, 'utf8').trim();
-
-    // Get Cloudflare cookies (optional, helps avoid blocks)
-    let cookieHeaders = '';
-    const homeResp = await fetch(baseURL, {
-      headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
-    });
-    const setCookies = homeResp.headers.get('set-cookie');
-    if (setCookies) cookieHeaders = setCookies.split(',').map(c => c.split(';')[0]).join('; ');
-
-    // Fetch homepage HTML with cookies
-    const response = await fetch(baseURL + '/', {
+    const response = await fetch("https://watchanimeworld.in/", {
       headers: {
-        "User-Agent": "Mozilla/5.0",
-        "Accept": "text/html",
-        "Cookie": cookieHeaders
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114 Safari/537.36"
       }
     });
-    if (!response.ok) return res.status(500).json({ error: `Fetch failed: ${response.status}` });
 
-    const html = await response.text();
-    const $ = cheerio.load(html);
+    if (!response.ok) {
+      return res.status(500).json({ success: false, status: response.status });
+    }
 
-    // Helper: Clean link (make relative from baseURL)
-    function cleanLink(link) {
-      if (!link) return '';
-      if (link.startsWith(baseURL)) return link.replace(baseURL, '');
-      return link;
+    // If fetch succeeded
+    res.status(200).json({ success: true, test: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+}      return link;
     }
 
     // Helper: Fix image URL (add https: if starts with //)
