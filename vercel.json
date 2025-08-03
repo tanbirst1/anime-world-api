@@ -1,22 +1,24 @@
 {
   "version": 2,
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "nodejs18.x"
-    }
-  },
+  "builds": [
+    { "src": "api/**/*.js", "use": "@vercel/node" }
+  ],
   "routes": [
     {
-      "src": "/movies",
-      "dest": "/api/movies/index.js"
+      "src": "^/movies/(.*)$",
+      "dest": "/api/movies/$1"
+      "dest": "/api/movies/[slug].js?slug=$1"
     },
     {
-      "src": "/series",
-      "dest": "/api/series/index.js"
+      "src": "^/series/(.*)$",
+      "dest": "/api/series/$1"
+      "dest": "/api/series/[slug].js?slug=$1"
+      "dest": "/api/series/[slug].js"
     },
     {
-      "src": "/",
-      "dest": "/api/index.js"
+      "src": "^/$",
+      "src": "^/movies/(.*)$",
+      "dest": "/api/movies/[slug].js"
     }
   ]
 }
