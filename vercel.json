@@ -2,11 +2,13 @@
   "version": 2,
   "functions": {
     "api/**/*.js": {
-      "runtime": "nodejs18.x"
+      "runtime": "nodejs18.x",
+      "memory": 256,
+      "maxDuration": 20
     }
   },
   "routes": [
-    { "src": "/series/(?<slug>[^/]+)", "dest": "api/series/[slug].js" },
-    { "src": "/movies/(?<slug>[^/]+)", "dest": "api/movies/[slug].js" }
+    { "src": "^/series/(.*)$", "dest": "api/series/[slug].js" },
+    { "src": "^/movies/(.*)$", "dest": "api/movies/[slug].js" }
   ]
 }
