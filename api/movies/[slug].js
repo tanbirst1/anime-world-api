@@ -1,94 +1,59 @@
+// api/movies/[slug].js
 import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
-import fs from 'fs';
-import path from 'path';
+import cheerio from 'cheerio';
+
+const BASE_URL = "https://watchanimeworld.in";
 
 export default async function handler(req, res) {
   try {
-    const { slug } = req.query;
+    const slug = req.query.slug;
     if (!slug) {
       return res.status(400).json({ error: "Missing movie slug" });
     }
 
-    // Base URL
-    const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
-    const baseURL = fs.readFileSync(basePath, 'utf8').trim();
-
-    // Target URL
-    const targetURL = `${baseURL}/movies/${slug}/`;
-    const resp = await fetch(targetURL, {
-      headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
-    });
-
-    if (!resp.ok) {
-      return res.status(500).json({ error: `Failed to fetch: ${resp.status}` });
-    }
-
-    const html = await resp.text();
-    const $ = cheerio.load(html);
-
-    // Detect homepage redirect
-    if ($('h3.section-title').first().text().includes("Newest Drops")) {
-      return res.status(404).json({ error: "Movie not found or redirected to homepage" });
-    }
-
-    // Movie details
-    const title = $('h1.entry-title').text().trim();
-    let poster = $('.post img').first().attr('src');
-    if (poster?.startsWith('//')) poster = 'https:' + poster;
-    const description = $('.description p').first().text().trim();
-    const year = $('.year .overviewCss').text().trim();
-    const duration = $('.duration .overviewCss').text().trim();
-
-    // Genres
-    let genres = [];
-    $('.genres a').each((_, el) => genres.push($(el).text().trim()));
-
-    // Languages
-    let languages = [];
-    $('.loadactor a').each((_, el) => languages.push($(el).text().trim()));
-
-    // 🔥 Servers (Match name + iframe URL)
-    let servers = [];
-    $('.aa-tbs-video li a').each((_, el) => {
-      const serverName = $(el).find('.server').text().trim();
-      const href = $(el).attr('href'); // Example: #options-0
-      if (href && href.startsWith('#')) {
-        const optionID = href.substring(1); // remove #
-        const iframe = $(`#${optionID} iframe`);
-        let videoURL = iframe.attr('src') || iframe.attr('data-src') || '';
-        if (videoURL?.startsWith('//')) videoURL = 'https:' + videoURL;
-        servers.push({ server: serverName, url: videoURL });
+    const movieURL = `${BASE_URL}/movies/${slug}/`;
+    const response = await fetch(movieURL, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "text/html"
       }
     });
 
-    res.status(200).json({
-      status: "ok",
-      slug,
-      title,
-      poster,
-      description,
-      year,
-      duration,
-      genres,
-      languages,
-      servers
-    });
+    if (!response.ok) {
+      return res.status(response.status).json({ error: `Failed to fetch movie page (${response.status})` });
+    }
 
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}
-    // Servers
+    const html = await response.text();
+    const $ = cheerio.load(html);
+
+    // Check if redirected to homepage
+    if ($('h3.section-title').first().text().includes("Newest Drops")) {
+      return res.status(404).json({ error: "Movie not found" });
+    }
+
+    // Extract title, poster, description
+    const title = $('h1.entry-title').text().trim();
+    let poster = $('article.post img').first().attr('src') || '';
+    if (poster.startsWith('//')) poster = 'https:' + poster;
+    const description = $('.description p').text().trim();
+
+    // Extract server list
     let servers = [];
-    $('.aa-tbs-video li').each((i, el) => {
+    $('.aa-tbs-video li').each((_, el) => {
       const serverName = $(el).find('.server').text().trim();
-      const optionId = $(el).find('a').attr('href')?.replace('#', '');
-      const iframeSrc = $(`#${optionId} iframe`).attr('src') || $(`#${optionId} iframe`).attr('data-src') || '';
-      servers.push({ server: serverName, url: iframeSrc });
+      const href = $(el).find('a').attr('href')?.replace('#', '');
+      const iframe = $(`#${href} iframe`);
+      const videoURL = iframe.attr('src') || iframe.attr('data-src') || '';
+
+      if (serverName && videoURL) {
+        servers.push({
+          name: serverName,
+          url: videoURL
+        });
+      }
     });
 
-    res.status(200).json({
+    return res.status(200).json({
       status: "ok",
       slug,
       title,
@@ -97,7 +62,7 @@ export default async function handler(req, res) {
       servers
     });
 
-  } catch (err) {
-    res.status(500).json({ error: "Serverless function crashed", details: err.message });
+  } catch (error) {
+    return res.status(500).json({ error: "Serverless crash prevented", details: error.message });
   }
 }
