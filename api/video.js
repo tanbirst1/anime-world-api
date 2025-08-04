@@ -25,7 +25,6 @@ export default function handler(req, res) {
       <head><meta charset="UTF-8"><title>Player</title></head>
       <body style="margin:0;background:#000">
         <iframe src="${iframeURL}" 
-                style="border:none;width:100%;height:100vh;" 
                 allowfullscreen allow="autoplay; encrypted-media">
         </iframe>
       </body>
