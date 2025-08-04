@@ -45,4 +45,15 @@ export default async function handler(req, res) {
   } catch {
     res.status(500).send("Server Error");
   }
+}        </style>
+      </head>
+      <body>
+        ${iframeURL ? `<iframe src="${iframeURL}" allowfullscreen></iframe>` 
+        : `<div class="error">Invalid or Expired Link</div>`}
+      </body>
+      </html>
+    `);
+  } catch {
+    res.status(500).send("Server Error");
+  }
 }
