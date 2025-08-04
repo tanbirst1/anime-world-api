@@ -1,17 +1,7 @@
 // api/movies/[slug].js
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import crypto from "crypto";
-
-const SECRET_KEY = crypto.createHash("sha256").update(process.env.VIDEO_SECRET || "super_secret_key").digest();
-const IV = Buffer.alloc(16, 0);
-
-function encrypt(url) {
-  const cipher = crypto.createCipheriv("aes-256-cbc", SECRET_KEY, IV);
-  let encrypted = cipher.update(url, "utf8", "base64");
-  encrypted += cipher.final("base64");
-  return encrypted.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
+import { encryptURL } from "../video.js"; // Import encrypt function
 
 export default async function handler(req, res) {
   try {
@@ -34,7 +24,15 @@ export default async function handler(req, res) {
     let servers = [];
     $(".video-player iframe").each((i, el) => {
       let src = $(el).attr("src") || $(el).attr("data-src");
-      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
+      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encryptURL(src)}` });
+    });
+
+    res.status(200).json({ status: "ok", title, poster, description, servers });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
     });
 
     res.status(200).json({ status: "ok", title, poster, description, servers });
