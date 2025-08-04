@@ -2,7 +2,7 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 import crypto from "crypto";
 
-const SECRET = "super_secret_key"; // change for more security
+const SECRET = "super_secret_key"; // change for security
 const SECRET_KEY = crypto.createHash("sha256").update(SECRET).digest();
 const IV = Buffer.alloc(16, 0);
 
@@ -22,19 +22,36 @@ export default async function handler(req, res) {
     const url = `${baseURL}/movies/${slug}/`;
 
     const resp = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!resp.ok) throw new Error("Page not found");
     const html = await resp.text();
     const $ = cheerio.load(html);
 
     const title = $("h1.entry-title").text().trim();
+    const description = $(".description p").text().trim();
+    const year = $(".year .overviewCss").text().trim() || "Unknown";
+    const genres = [];
+    $(".genres a").each((i, el) => genres.push($(el).text().trim()));
+
     let poster = $(".poster img").attr("src");
     if (poster?.startsWith("//")) poster = "https:" + poster;
 
-    let servers = [];
+    const servers = [];
     $(".video-player iframe").each((i, el) => {
       let link = $(el).attr("src") || $(el).attr("data-src");
       if (link) {
         const token = encryptShort(link);
         servers.push({
+          name: `Server ${i + 1}`,
+          url: `${req.headers["x-forwarded-proto"] || "https"}://${req.headers.host}/v/${token}`
+        });
+      }
+    });
+
+    res.json({ slug, title, poster, year, description, genres, servers });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}        servers.push({
           server: `Server ${i + 1}`,
           play_url: `${req.headers["x-forwarded-proto"] || "https"}://${req.headers.host}/v/${token}`
         });
