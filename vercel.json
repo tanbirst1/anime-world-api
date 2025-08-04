@@ -1,7 +1,7 @@
 {
   "version": 2,
   "functions": {
-    "api/movies/[slug].py": {
+    "api/movies/slug.py": {
       "runtime": "vercel-python@0.5.0"
     }
   },
@@ -12,7 +12,7 @@
 
     { "src": "^/movies/page/?$",             "dest": "/api/movies/page.js" },
     { "src": "^/movies/page/([0-9]+)$",      "dest": "/api/movies/page.js?page=$1" },
-    { "src": "^/movies/(.*)$",               "dest": "/api/movies/[slug].py?slug=$1" },
+    { "src": "^/movies/(.*)$",               "dest": "/api/movies/slug.py?slug=$1" },
 
     { "src": "^/search/(.*)$",               "dest": "/api/search/[name].js?name=$1" },
 
