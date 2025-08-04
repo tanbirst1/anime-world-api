@@ -14,10 +14,8 @@ export default async function handler(req, res) {
     const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
     const baseURL = fs.readFileSync(basePath, 'utf8').trim();
 
-    // Movie URL
+    // Target URL
     const targetURL = `${baseURL}/movies/${slug}/`;
-
-    // Fetch movie HTML
     const resp = await fetch(targetURL, {
       headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
     });
@@ -29,12 +27,12 @@ export default async function handler(req, res) {
     const html = await resp.text();
     const $ = cheerio.load(html);
 
-    // Detect redirect/homepage
+    // Detect homepage redirect
     if ($('h3.section-title').first().text().includes("Newest Drops")) {
       return res.status(404).json({ error: "Movie not found or redirected to homepage" });
     }
 
-    // Movie info
+    // Movie details
     const title = $('h1.entry-title').text().trim();
     let poster = $('.post img').first().attr('src');
     if (poster?.startsWith('//')) poster = 'https:' + poster;
@@ -44,23 +42,24 @@ export default async function handler(req, res) {
 
     // Genres
     let genres = [];
-    $('.genres a').each((_, el) => {
-      genres.push($(el).text().trim());
-    });
+    $('.genres a').each((_, el) => genres.push($(el).text().trim()));
 
     // Languages
     let languages = [];
-    $('.loadactor a').each((_, el) => {
-      languages.push($(el).text().trim());
-    });
+    $('.loadactor a').each((_, el) => languages.push($(el).text().trim()));
 
-    // Servers
+    // 🔥 Servers (Match name + iframe URL)
     let servers = [];
-    $('.aa-tbs-video li a').each((i, el) => {
+    $('.aa-tbs-video li a').each((_, el) => {
       const serverName = $(el).find('.server').text().trim();
-      const serverID = $(el).attr('href')?.replace('#', '');
-      const iframeSrc = $(`${serverID} iframe`).attr('src') || $(`${serverID} iframe`).attr('data-src');
-      servers.push({ server: serverName, iframe: iframeSrc });
+      const href = $(el).attr('href'); // Example: #options-0
+      if (href && href.startsWith('#')) {
+        const optionID = href.substring(1); // remove #
+        const iframe = $(`#${optionID} iframe`);
+        let videoURL = iframe.attr('src') || iframe.attr('data-src') || '';
+        if (videoURL?.startsWith('//')) videoURL = 'https:' + videoURL;
+        servers.push({ server: serverName, url: videoURL });
+      }
     });
 
     res.status(200).json({
