@@ -1,40 +1,95 @@
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
 
 const MAP_FILE = path.join(process.cwd(), 'api', 'map.json');
 
-// Save mapping
-function saveMap(map) {
-  fs.writeFileSync(MAP_FILE, JSON.stringify(map));
-}
-
-// Load mapping
+// Load existing map (ID → real URL)
 function loadMap() {
   if (!fs.existsSync(MAP_FILE)) return {};
-  return JSON.parse(fs.readFileSync(MAP_FILE));
+  try { return JSON.parse(fs.readFileSync(MAP_FILE, 'utf8')); }
+  catch { return {}; }
+}
+// Save updated map
+function saveMap(m) {
+  fs.writeFileSync(MAP_FILE, JSON.stringify(m));
 }
 
 export default async function handler(req, res) {
   try {
-    const slug = req.query.slug;
+    const { slug } = req.query;
     if (!slug) return res.status(400).json({ error: "Missing movie slug" });
 
-    const baseURL = "https://watchanimeworld.in";
-    const targetURL = `${baseURL}/movies/${slug}/`;
+    // Base URL (read from base_url.txt or default)
+    const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
+    const baseURL = fs.existsSync(basePath)
+      ? fs.readFileSync(basePath, 'utf8').trim()
+      : "https://watchanimeworld.in";
 
-    const response = await fetch(targetURL, { headers: { "User-Agent": "Mozilla/5.0" }});
-    if (!response.ok) return res.status(500).json({ error: `Fetch failed: ${response.status}` });
-
-    const html = await response.text();
+    // Fetch movie page
+    const url = `${baseURL}/movies/${slug}/`;
+    const resp = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!resp.ok) return res.status(500).json({ error: `Fetch failed (${resp.status})` });
+    const html = await resp.text();
     const $ = cheerio.load(html);
 
-    // Movie info
-    const title = $('h1.entry-title').text().trim();
-    const poster = $('.post.single img').first().attr('src');
-    const description = $('.description p').first().text().trim();
+    // Redirect detection
+    if ($('h3.section-title').first().text().includes("Newest Drops")) {
+      return res.status(404).json({ error: "Movie not found or redirected" });
+    }
 
+    // Extract details
+    const title       = $('h1.entry-title').text().trim();
+    let poster        = $('.post.single img').first().attr('src') || '';
+    if (poster.startsWith('//')) poster = 'https:' + poster;
+    const description = $('.description p').first().text().trim();
+    const year        = $('.year .overviewCss').text().trim();
+    const duration    = $('.duration .overviewCss').text().trim();
+
+    const genres     = $('.genres a').map((i,e)=>$(e).text().trim()).get();
+    const languages  = $('.loadactor a').map((i,e)=>$(e).text().trim()).get();
+
+    // Build servers array with short IDs
+    const mapData = loadMap();
+    let servers = [];
+    $('.aa-tbs-video li a').each((i, el) => {
+      const name = $(el).find('.server').text().trim() || `Server ${i+1}`;
+      const href = $(el).attr('href') || '';
+      if (!href.startsWith('#')) return;
+      const idNum = href.slice(1); // e.g. "options-0"
+      const iframe = $(`#${idNum} iframe`);
+      let realURL = iframe.attr('src') || iframe.attr('data-src') || '';
+      if (realURL.startsWith('//')) realURL = 'https:' + realURL;
+      if (!realURL) return;
+
+      // generate a stable short ID: slug + "_" + idNum
+      const shortId = `${slug}_${idNum}`;
+      mapData[shortId] = realURL;
+      servers.push({
+        server: name,
+        url: `/video/${shortId}`
+      });
+    });
+    saveMap(mapData);
+
+    res.status(200).json({
+      status: "ok",
+      slug,
+      title,
+      poster,
+      description,
+      year,
+      duration,
+      genres,
+      languages,
+      servers
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
     let servers = [];
     const mapData = loadMap();
 
