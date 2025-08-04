@@ -5,10 +5,12 @@ import fs from 'fs';
 
 const MAP_FILE = path.join(process.cwd(), 'api', 'map.json');
 
+// Save mapping
 function saveMap(map) {
   fs.writeFileSync(MAP_FILE, JSON.stringify(map));
 }
 
+// Load mapping
 function loadMap() {
   if (!fs.existsSync(MAP_FILE)) return {};
   return JSON.parse(fs.readFileSync(MAP_FILE));
@@ -16,10 +18,9 @@ function loadMap() {
 
 export default async function handler(req, res) {
   try {
-    const { slug } = req.query;
+    const slug = req.query.slug;
     if (!slug) return res.status(400).json({ error: "Missing movie slug" });
 
-    // Base URL
     const baseURL = "https://watchanimeworld.in";
     const targetURL = `${baseURL}/movies/${slug}/`;
 
@@ -29,12 +30,44 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
+    // Movie info
     const title = $('h1.entry-title').text().trim();
     const poster = $('.post.single img').first().attr('src');
     const description = $('.description p').first().text().trim();
 
     let servers = [];
     const mapData = loadMap();
+
+    $('.aa-tbs-video li a').each((i, el) => {
+      const serverName = $(el).find('.server').text().trim() || `Server ${i+1}`;
+      const iframeId = $(el).attr('href').replace('#options-', '');
+      const iframeSrc = $(`#options-${iframeId} iframe`).attr('src') || $(`#options-${iframeId} iframe`).attr('data-src');
+
+      if (iframeSrc) {
+        const shortId = `v${Date.now().toString(36)}${i}`;
+        mapData[shortId] = iframeSrc;
+        servers.push({
+          server: serverName,
+          url: `/video/${shortId}`
+        });
+      }
+    });
+
+    saveMap(mapData);
+
+    res.status(200).json({
+      status: "ok",
+      slug,
+      title,
+      poster,
+      description,
+      servers
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}    const mapData = loadMap();
 
     $('.aa-tbs-video li a').each((i, el) => {
       const serverName = $(el).find('.server').text().trim() || `Server ${i+1}`;
