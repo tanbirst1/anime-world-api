@@ -1,5 +1,8 @@
 {
   "version": 2,
+  "functions": {
+    "api/movies/[slug].py": { "runtime": "python3.9" }
+  },
   "routes": [
     { "src": "^/series/page/?$",             "dest": "/api/series/page.js" },
     { "src": "^/series/page/([0-9]+)$",      "dest": "/api/series/page.js?page=$1" },
@@ -7,7 +10,7 @@
 
     { "src": "^/movies/page/?$",             "dest": "/api/movies/page.js" },
     { "src": "^/movies/page/([0-9]+)$",      "dest": "/api/movies/page.js?page=$1" },
-    { "src": "^/movies/(.*)$",               "dest": "/api/movies/[slug].js?slug=$1" },
+    { "src": "^/movies/(.*)$",               "dest": "/api/movies/[slug].py?slug=$1" },
 
     { "src": "^/search/(.*)$",               "dest": "/api/search/[name].js?name=$1" },
 
