@@ -6,31 +6,40 @@ const IV = Buffer.alloc(16, 0);
 
 function decrypt(token) {
   const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY, IV);
-  let decrypted = decipher.update(decodeURIComponent(token), "base64", "utf8");
+  let decrypted = decipher.update(token, "base64", "utf8");
   decrypted += decipher.final("utf8");
   return decrypted;
 }
 
 export default function handler(req, res) {
   try {
-    const { token } = req.query;
-    if (!token) return res.status(400).send("Missing token");
+    const { id } = req.query;
+    if (!id || !global.shortLinks || !global.shortLinks[id]) {
+      return res.status(400).send("Invalid link");
+    }
 
+    const token = global.shortLinks[id];
     const iframeURL = decrypt(token);
 
     res.setHeader("Content-Type", "text/html");
     res.status(200).send(`
       <!DOCTYPE html>
       <html>
-      <head><meta charset="UTF-8"><title>Player</title></head>
-      <body style="margin:0;background:#000">
-        <iframe src="${iframeURL}" 
-                allowfullscreen allow="autoplay; encrypted-media">
-        </iframe>
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>Player</title>
+        <style>
+          body { margin:0; background:#000; }
+          iframe { border:none; width:100%; height:100vh; }
+        </style>
+      </head>
+      <body>
+        <iframe src="${iframeURL}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
       </body>
       </html>
     `);
   } catch {
-    res.status(500).send("Invalid token or decryption error");
+    res.status(500).send("Decryption error");
   }
 }
