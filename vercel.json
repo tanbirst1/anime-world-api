@@ -1,7 +1,9 @@
 {
   "version": 2,
   "functions": {
-    "api/movies/[slug].py": { "runtime": "python3.9" }
+    "api/movies/[slug].py": {
+      "runtime": "vercel-python@0.5.0"
+    }
   },
   "routes": [
     { "src": "^/series/page/?$",             "dest": "/api/series/page.js" },
