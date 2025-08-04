@@ -1,40 +1,71 @@
 import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
-import fs from 'fs';
 import path from 'path';
+import fs from 'fs';
+
+const MAP_FILE = path.join(process.cwd(), 'api', 'map.json');
+
+function saveMap(map) {
+  fs.writeFileSync(MAP_FILE, JSON.stringify(map));
+}
+
+function loadMap() {
+  if (!fs.existsSync(MAP_FILE)) return {};
+  return JSON.parse(fs.readFileSync(MAP_FILE));
+}
 
 export default async function handler(req, res) {
   try {
     const { slug } = req.query;
-    if (!slug) {
-      return res.status(400).json({ error: "Missing movie slug" });
-    }
+    if (!slug) return res.status(400).json({ error: "Missing movie slug" });
 
     // Base URL
-    const basePath = path.join(process.cwd(), 'src', 'base_url.txt');
-    const baseURL = fs.readFileSync(basePath, 'utf8').trim();
-
-    // Target URL
+    const baseURL = "https://watchanimeworld.in";
     const targetURL = `${baseURL}/movies/${slug}/`;
-    const resp = await fetch(targetURL, {
-      headers: { "User-Agent": "Mozilla/5.0", "Accept": "text/html" }
-    });
 
-    if (!resp.ok) {
-      return res.status(500).json({ error: `Failed to fetch: ${resp.status}` });
-    }
+    const response = await fetch(targetURL, { headers: { "User-Agent": "Mozilla/5.0" }});
+    if (!response.ok) return res.status(500).json({ error: `Fetch failed: ${response.status}` });
 
-    const html = await resp.text();
+    const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Detect homepage redirect
-    if ($('h3.section-title').first().text().includes("Newest Drops")) {
-      return res.status(404).json({ error: "Movie not found or redirected to homepage" });
-    }
-
-    // Movie details
     const title = $('h1.entry-title').text().trim();
-    let poster = $('.post img').first().attr('src');
+    const poster = $('.post.single img').first().attr('src');
+    const description = $('.description p').first().text().trim();
+
+    let servers = [];
+    const mapData = loadMap();
+
+    $('.aa-tbs-video li a').each((i, el) => {
+      const serverName = $(el).find('.server').text().trim() || `Server ${i+1}`;
+      const iframeId = $(el).attr('href').replace('#options-', '');
+      const iframeSrc = $(`#options-${iframeId} iframe`).attr('src') || $(`#options-${iframeId} iframe`).attr('data-src');
+
+      if (iframeSrc) {
+        const shortId = `vid${Date.now()}${i}`;
+        mapData[shortId] = iframeSrc; // store mapping
+        servers.push({
+          server: serverName,
+          url: `/video/${shortId}`
+        });
+      }
+    });
+
+    saveMap(mapData);
+
+    res.status(200).json({
+      status: "ok",
+      slug,
+      title,
+      poster,
+      description,
+      servers
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}    let poster = $('.post img').first().attr('src');
     if (poster?.startsWith('//')) poster = 'https:' + poster;
     const description = $('.description p').first().text().trim();
     const year = $('.year .overviewCss').text().trim();
