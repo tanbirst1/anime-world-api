@@ -1,45 +1,42 @@
-// api/video.js
 import crypto from "crypto";
 
-const SECRET_KEY = crypto.createHash("sha256").update(process.env.VIDEO_SECRET || "super_secret_key").digest();
+const SECRET = "super_secret_key";
+const SECRET_KEY = crypto.createHash("sha256").update(SECRET).digest();
 const IV = Buffer.alloc(16, 0);
 
-// Safe base64url decode
-function decrypt(token) {
-  try {
-    let base64 = token.replace(/-/g, "+").replace(/_/g, "/");
-    while (base64.length % 4) base64 += "=";
-    const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY, IV);
-    let decrypted = decipher.update(base64, "base64", "utf8");
-    decrypted += decipher.final("utf8");
-    return decrypted;
-  } catch (err) {
-    return null; // Instead of crash
-  }
+function decryptShort(token) {
+  token = token.replace(/-/g, "+").replace(/_/g, "/");
+  const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY, IV);
+  let decrypted = decipher.update(token, "base64", "utf8");
+  decrypted += decipher.final("utf8");
+  return decrypted;
 }
 
-export default function handler(req, res) {
+export default async function handler(req, res) {
   try {
     const { id } = req.query;
-    if (!id) return res.status(400).send("Invalid or missing token");
+    if (!id) return res.status(400).send("Invalid token");
 
-    const iframeURL = decrypt(id);
-    if (!iframeURL) return res.status(400).send("Invalid token");
+    const iframeURL = decryptShort(id);
 
     res.setHeader("Content-Type", "text/html");
-    res.status(200).send(`
+    res.send(`
       <!DOCTYPE html>
       <html>
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>html,body{margin:0;padding:0;height:100%;background:#000}iframe{width:100%;height:100%;border:none}</style>
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+        <title>Video Player</title>
+        <style>
+          body { margin:0; background:#000; }
+          iframe { border:none; width:100%; height:100vh; }
+        </style>
       </head>
       <body>
-        <iframe src="${iframeURL}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+        <iframe src="${iframeURL}" allowfullscreen></iframe>
       </body>
       </html>
     `);
   } catch (err) {
-    res.status(500).send("Server Error");
+    res.status(500).send("Invalid or expired link");
   }
 }
