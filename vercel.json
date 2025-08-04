@@ -1,6 +1,8 @@
 {
   "version": 2,
   "routes": [
+    { "src": "^/series/page/?$", "dest": "/api/series/page.js" },
+    { "src": "^/series/page/([0-9]+)$", "dest": "/api/series/page.js?page=$1" },
     { "src": "/", "dest": "/api/index.js" }
   ]
 }
