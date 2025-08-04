@@ -6,7 +6,7 @@ const IV = Buffer.alloc(16, 0);
 
 function decryptSafe(token) {
   try {
-    token = token.replace(/-/g, "+").replace(/_/g, "/");
+    token = (token || "").replace(/-/g, "+").replace(/_/g, "/");
     const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY, IV);
     let decrypted = decipher.update(token, "base64", "utf8");
     decrypted += decipher.final("utf8");
@@ -18,10 +18,13 @@ function decryptSafe(token) {
 
 export default async function handler(req, res) {
   try {
-    const { id } = req.query;
-    if (!id) return res.status(400).send("Invalid token");
+    const token = req.query.id;
+    if (!token) {
+      res.status(400).send("Invalid token");
+      return;
+    }
 
-    const iframeURL = decryptSafe(id);
+    const iframeURL = decryptSafe(token);
 
     res.setHeader("Content-Type", "text/html");
     res.send(`
@@ -37,19 +40,9 @@ export default async function handler(req, res) {
         </style>
       </head>
       <body>
-        ${iframeURL ? `<iframe src="${iframeURL}" allowfullscreen></iframe>` 
-        : `<div class="error">Invalid or Expired Link</div>`}
-      </body>
-      </html>
-    `);
-  } catch {
-    res.status(500).send("Server Error");
-  }
-}        </style>
-      </head>
-      <body>
-        ${iframeURL ? `<iframe src="${iframeURL}" allowfullscreen></iframe>` 
-        : `<div class="error">Invalid or Expired Link</div>`}
+        ${iframeURL 
+          ? `<iframe src="${iframeURL}" allowfullscreen></iframe>` 
+          : `<div class="error">Invalid or Expired Link</div>`}
       </body>
       </html>
     `);
