@@ -1,40 +1,44 @@
-import fs from 'fs';
-import path from 'path';
+// api/video.js
+import { getVideoFromHash } from './movies/[slug].js';
 
-const MAP_FILE = path.join(process.cwd(), 'api', 'map.json');
-
-// Load map
-function loadMap() {
-  if (!fs.existsSync(MAP_FILE)) return {};
-  try { return JSON.parse(fs.readFileSync(MAP_FILE, 'utf8')); }
-  catch { return {}; }
-}
-
-export default function handler(req, res) {
+export default async function handler(req, res) {
   try {
-    // slug_optionsID or via ?slug
-    const id = req.query.id || req.url.split('/').pop();
-    if (!id) return res.status(400).send("Missing video ID");
+    const { token } = req.query;
+    if (!token) return res.status(400).send("❌ Missing token");
 
-    const mapData = loadMap();
-    const realURL = mapData[id];
-    if (!realURL) return res.status(404).send("Video not found");
+    const realURL = getVideoFromHash(token);
+    if (!realURL) return res.status(404).send("❌ Invalid token");
 
-    // Serve minimal HTML with ad + iframe
-    res.setHeader("Content-Type", "text/html");
-    res.end(`
+    // HTML Player Page
+    const html = `
       <!DOCTYPE html>
       <html lang="en">
-      <head><meta charset="UTF-8"><title>Player</title></head>
-      <body style="margin:0;background:black;">
-        <div style="height:60px;background:#222;color:#fff;
-                    display:flex;align-items:center;justify-content:center;
-                    font-family:sans-serif;">
-          <!-- Your Ad Slot Here -->
-          🚀 Your Ad Banner
+      <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Video Player</title>
+        <style>
+          body { margin:0; background:#000; display:flex; flex-direction:column; align-items:center; }
+          .ad-banner { background:#111; color:#fff; padding:10px; text-align:center; width:100%; }
+          iframe { width:100%; height:90vh; border:none; }
+        </style>
+      </head>
+      <body>
+        <div class="ad-banner">
+          🔥 Your Ad Here — Click to Support Us 🔥
         </div>
-        <iframe src="${realURL}" 
-                style="width:100%;height:calc(100vh - 60px);border:none;"
+        <iframe src="${realURL}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+      </body>
+      </html>
+    `;
+
+    res.setHeader("Content-Type", "text/html");
+    res.status(200).send(html);
+
+  } catch (err) {
+    res.status(500).send("⚠️ Error: " + err.message);
+  }
+}                style="width:100%;height:calc(100vh - 60px);border:none;"
                 allow="autoplay; encrypted-media" allowfullscreen>
         </iframe>
       </body>
