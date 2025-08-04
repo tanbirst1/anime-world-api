@@ -1,13 +1,14 @@
 import crypto from "crypto";
 
 const SECRET = "super_secret_key";
-const SECRET_KEY = crypto.createHash("sha256").update(SECRET).digest();
+const KEY = crypto.createHash("sha256").update(SECRET).digest();
 const IV = Buffer.alloc(16, 0);
 
 function decryptSafe(token) {
   try {
-    token = (token || "").replace(/-/g, "+").replace(/_/g, "/");
-    const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY, IV);
+    if (!token || token.length < 8) return null;
+    token = token.replace(/-/g, "+").replace(/_/g, "/");
+    const decipher = crypto.createDecipheriv("aes-256-cbc", KEY, IV);
     let decrypted = decipher.update(token, "base64", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
@@ -19,12 +20,7 @@ function decryptSafe(token) {
 export default async function handler(req, res) {
   try {
     const token = req.query.id;
-    if (!token) {
-      res.status(400).send("Invalid token");
-      return;
-    }
-
-    const iframeURL = decryptSafe(token);
+    const link = decryptSafe(token);
 
     res.setHeader("Content-Type", "text/html");
     res.send(`
@@ -35,6 +31,21 @@ export default async function handler(req, res) {
         <title>Video Player</title>
         <style>
           body { margin:0; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; }
+          iframe { border:none; width:100%; height:100%; }
+          .error { color:white; text-align:center; }
+        </style>
+      </head>
+      <body>
+        ${link 
+          ? `<iframe src="${link}" allowfullscreen></iframe>` 
+          : `<div class="error">Invalid or Expired Link</div>`}
+      </body>
+      </html>
+    `);
+  } catch {
+    res.status(500).send("Something went wrong");
+  }
+}          body { margin:0; background:#000; display:flex; justify-content:center; align-items:center; height:100vh; }
           iframe { border:none; width:100%; height:100%; max-width:100%; }
           .error { color:white; text-align:center; }
         </style>
