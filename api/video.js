@@ -1,15 +1,17 @@
 import crypto from "crypto";
 
-const SECRET     = "super_secret_key"; // same as above
-const SECRET_KEY = crypto.createHash("sha256").update(SECRET).digest();
-const IV         = Buffer.alloc(16, 0);
+const SECRET_KEY = crypto.createHash("sha256")
+  .update(process.env.VIDEO_SECRET || "super_secret_key")
+  .digest();
+const IV = Buffer.alloc(16, 0);
 
-function decryptSafe(token) {
+// Decrypt Base64URL
+function decrypt(token) {
   try {
-    let b64 = token.replace(/-/g, "+").replace(/_/g, "/");
-    while (b64.length % 4) b64 += "=";
+    let base64 = token.replace(/-/g, "+").replace(/_/g, "/");
+    while (base64.length % 4) base64 += "=";
     const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY, IV);
-    let decrypted = decipher.update(b64, "base64", "utf8");
+    let decrypted = decipher.update(base64, "base64", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch {
@@ -17,23 +19,27 @@ function decryptSafe(token) {
   }
 }
 
-export default async function handler(req, res) {
-  try {
-    const id = Array.isArray(req.query.id) ? req.query.id[0] : req.query.id;
-    const url = decryptSafe(id);
+export default function handler(req, res) {
+  const { id } = req.query;
+  if (!id) return res.status(400).send("Missing token");
 
-    res.setHeader("Content-Type", "text/html");
-    if (!url) {
-      return res.status(400).send(`
-        <!DOCTYPE html>
-        <html><body style="margin:0;background:#000;color:#fff;
-        display:flex;align-items:center;justify-content:center;height:100vh;
-        font-family:sans-serif;">
-          <div>❌ Invalid or expired link</div>
-        </body></html>`);
-    }
+  const iframeURL = decrypt(id);
+  if (!iframeURL) return res.status(400).send("Invalid token");
 
-    res.send(`
+  res.setHeader("Content-Type", "text/html");
+  res.status(200).send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width,initial-scale=1.0">
+      <style>html,body{margin:0;padding:0;height:100%;background:#000}iframe{width:100%;height:100%;border:none}</style>
+    </head>
+    <body>
+      <iframe src="${iframeURL}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+    </body>
+    </html>
+  `);
+}
       <!DOCTYPE html>
       <html>
       <head>
