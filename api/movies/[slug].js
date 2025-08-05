@@ -28,26 +28,39 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
+    // Title & Poster
     const title = $("h1.entry-title").text().trim() || "Unknown";
     const poster = $(".post img").first().attr("src") || "";
     const description = $(".description p").first().text().trim() || "";
 
-    // Extra details (safe extraction to avoid crash)
-    const genre = [];
-    $(".movie-details .genres a").each((i, el) => {
-      genre.push($(el).text().trim());
-    });
+    // Genres
+    const genres = [];
+    $(".genres a").each((i, el) => genres.push($(el).text().trim()));
 
-    const year = $(".movie-details .year").text().trim() || 
-                 $("time[itemprop='datePublished']").text().trim() || "";
+    // Languages
+    const languages = [];
+    $(".loadactor a").each((i, el) => languages.push($(el).text().trim()));
 
-    const rating = $(".movie-details .rating").text().trim() || "";
-    const releaseDate = $(".movie-details .release-date").text().trim() || "";
+    // Duration
+    const duration = $(".duration .overviewCss").text().trim() || "";
 
+    // Year
+    const year = $(".year .overviewCss").text().trim() || "";
+
+    // Network (like Crunchyroll)
+    const network = $(".network .overviewCss a img").attr("alt") || "";
+
+    // Servers
     let servers = [];
     $(".video-player iframe").each((i, el) => {
       let src = $(el).attr("src") || $(el).attr("data-src");
-      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
+      let serverName = $(`.aa-tbs-video li:eq(${i}) .server`).text().trim() || `Server ${i + 1}`;
+      if (src) {
+        servers.push({
+          server: serverName,
+          url: `/v/${encrypt(src)}`
+        });
+      }
     });
 
     res.status(200).json({
@@ -55,21 +68,13 @@ export default async function handler(req, res) {
       title,
       poster,
       description,
-      genre,
+      genres,
+      languages,
+      duration,
       year,
-      rating,
-      releaseDate,
+      network,
       servers
     });
-
-  } catch (err) {
-    res.status(500).json({ error: "Scraping failed", details: err.message });
-  }
-}      let src = $(el).attr("src") || $(el).attr("data-src");
-      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
-    });
-
-    res.status(200).json({ status: "ok", title, poster, description, servers });
 
   } catch (err) {
     res.status(500).json({ error: "Scraping failed", details: err.message });
