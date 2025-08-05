@@ -32,9 +32,40 @@ export default async function handler(req, res) {
     const poster = $(".post img").first().attr("src") || "";
     const description = $(".description p").first().text().trim() || "";
 
+    // Extra details (safe extraction to avoid crash)
+    const genre = [];
+    $(".movie-details .genres a").each((i, el) => {
+      genre.push($(el).text().trim());
+    });
+
+    const year = $(".movie-details .year").text().trim() || 
+                 $("time[itemprop='datePublished']").text().trim() || "";
+
+    const rating = $(".movie-details .rating").text().trim() || "";
+    const releaseDate = $(".movie-details .release-date").text().trim() || "";
+
     let servers = [];
     $(".video-player iframe").each((i, el) => {
       let src = $(el).attr("src") || $(el).attr("data-src");
+      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
+    });
+
+    res.status(200).json({
+      status: "ok",
+      title,
+      poster,
+      description,
+      genre,
+      year,
+      rating,
+      releaseDate,
+      servers
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: "Scraping failed", details: err.message });
+  }
+}      let src = $(el).attr("src") || $(el).attr("data-src");
       if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
     });
 
