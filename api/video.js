@@ -1,7 +1,9 @@
 // api/video.js
 import crypto from "crypto";
 
-const SECRET_KEY = crypto.createHash("sha256").update(process.env.VIDEO_SECRET || "super_secret_key").digest();
+const SECRET_KEY = crypto.createHash("sha256")
+  .update(process.env.VIDEO_SECRET || "super_secret_key")
+  .digest();
 const IV = Buffer.alloc(16, 0);
 
 // Safe base64url decode
@@ -13,8 +15,8 @@ function decrypt(token) {
     let decrypted = decipher.update(base64, "base64", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
-  } catch (err) {
-    return null; // Instead of crash
+  } catch {
+    return null; // Prevent crash
   }
 }
 
@@ -32,14 +34,32 @@ export default function handler(req, res) {
       <html>
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>html,body{margin:0;padding:0;height:100%;background:#000}iframe{width:100%;height:100%;border:none}</style>
+        <style>
+          html,body { margin:0; padding:0; height:100%; background:#000; }
+          iframe { width:100%; height:100%; border:none; }
+        </style>
       </head>
       <body>
-        <iframe src="${iframeURL}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+        <iframe id="player" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+        <script>
+          (async () => {
+            try {
+              // Fetch real video URL as blob
+              const response = await fetch("${iframeURL}");
+              const blob = await response.blob();
+              const blobUrl = URL.createObjectURL(blob);
+              
+              // Set iframe src to blob URL
+              document.getElementById("player").src = blobUrl;
+            } catch (e) {
+              document.body.innerHTML = "<h2 style='color:white;text-align:center;'>Video load failed</h2>";
+            }
+          })();
+        </script>
       </body>
       </html>
     `);
-  } catch (err) {
+  } catch {
     res.status(500).send("Server Error");
   }
 }
