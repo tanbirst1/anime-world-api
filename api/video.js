@@ -5,10 +5,10 @@ const SECRET_KEY = crypto.createHash("sha256")
   .digest();
 const IV = Buffer.alloc(16, 0);
 
-// Decrypt Base64URL safely
+// Safe decryption
 function decrypt(token) {
   try {
-    if (!token) return null;
+    if (!token || typeof token !== "string") return null;
     let base64 = token.replace(/-/g, "+").replace(/_/g, "/");
     while (base64.length % 4) base64 += "=";
     const decipher = crypto.createDecipheriv("aes-256-cbc", SECRET_KEY, IV);
@@ -16,25 +16,54 @@ function decrypt(token) {
     decrypted += decipher.final("utf8");
     return decrypted;
   } catch {
-    return null; // Prevent crash
+    return null;
   }
 }
 
 export default function handler(req, res) {
-  try {
-    const { id } = req.query;
-    if (!id) return res.status(400).send("Missing token");
+  const { id } = req.query;
+  if (!id) {
+    res.status(400).send("Missing token");
+    return;
+  }
 
-    const iframeURL = decrypt(id);
-    if (!iframeURL) return res.status(400).send("Invalid token");
+  const realURL = decrypt(id);
+  if (!realURL) {
+    res.status(400).send("Invalid token");
+    return;
+  }
 
-    // Hide iframe src (load dynamically with JS)
-    res.setHeader("Content-Type", "text/html");
-    res.status(200).send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+  // Hide real URL by converting it to blob dynamically
+  res.setHeader("Content-Type", "text/html");
+  res.status(200).send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta name="viewport" content="width=device-width,initial-scale=1.0">
+      <style>
+        html,body { margin:0; padding:0; height:100%; background:#000; }
+        iframe { width:100%; height:100%; border:none; }
+      </style>
+    </head>
+    <body>
+      <iframe id="player" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+      <script>
+        (async () => {
+          try {
+            const videoUrl = "${realURL}";
+            const response = await fetch(videoUrl);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            document.getElementById("player").src = blobUrl;
+          } catch (e) {
+            document.body.innerHTML = "<h2 style='color:white;text-align:center;'>Failed to load video</h2>";
+          }
+        })();
+      </script>
+    </body>
+    </html>
+  `);
+}        <meta name="viewport" content="width=device-width,initial-scale=1.0">
         <style>
           html,body { margin:0; padding:0; height:100%; background:#000; }
           iframe { width:100%; height:100%; border:none; }
