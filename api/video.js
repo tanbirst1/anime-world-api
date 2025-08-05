@@ -5,8 +5,7 @@ const SECRET_KEY = crypto.createHash("sha256")
   .digest();
 const IV = Buffer.alloc(16, 0);
 
-// Safe decryption
-function decrypt(token) {
+function safeDecrypt(token) {
   try {
     if (!token || typeof token !== "string") return null;
     let base64 = token.replace(/-/g, "+").replace(/_/g, "/");
@@ -15,101 +14,69 @@ function decrypt(token) {
     let decrypted = decipher.update(base64, "base64", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted;
-  } catch {
-    return null;
+  } catch (err) {
+    return null; // Never crash
   }
 }
 
 export default function handler(req, res) {
-  const { id } = req.query;
-  if (!id) {
-    res.status(400).send("Missing token");
-    return;
-  }
+  try {
+    const { id } = req.query;
 
-  const realURL = decrypt(id);
-  if (!realURL) {
-    res.status(400).send("Invalid token");
-    return;
-  }
+    // Debug if id missing
+    if (!id) {
+      res.status(400).send(`
+        <h2 style="color:white;background:black;text-align:center;padding:20px">
+          Missing or invalid token<br>ID Param: ${JSON.stringify(req.query)}
+        </h2>
+      `);
+      return;
+    }
 
-  // Hide real URL by converting it to blob dynamically
-  res.setHeader("Content-Type", "text/html");
-  res.status(200).send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta name="viewport" content="width=device-width,initial-scale=1.0">
-      <style>
-        html,body { margin:0; padding:0; height:100%; background:#000; }
-        iframe { width:100%; height:100%; border:none; }
-      </style>
-    </head>
-    <body>
-      <iframe id="player" allowfullscreen allow="autoplay; encrypted-media"></iframe>
-      <script>
-        (async () => {
-          try {
-            const videoUrl = "${realURL}";
-            const response = await fetch(videoUrl);
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            document.getElementById("player").src = blobUrl;
-          } catch (e) {
-            document.body.innerHTML = "<h2 style='color:white;text-align:center;'>Failed to load video</h2>";
-          }
-        })();
-      </script>
-    </body>
-    </html>
-  `);
-}        <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    const realURL = safeDecrypt(id);
+    if (!realURL) {
+      res.status(400).send(`
+        <h2 style="color:white;background:black;text-align:center;padding:20px">
+          Failed to decrypt token
+        </h2>
+      `);
+      return;
+    }
+
+    // Return iframe with blob (hidden real URL)
+    res.setHeader("Content-Type", "text/html");
+    res.status(200).send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta name="viewport" content="width=device-width,initial-scale=1.0">
         <style>
           html,body { margin:0; padding:0; height:100%; background:#000; }
           iframe { width:100%; height:100%; border:none; }
         </style>
       </head>
       <body>
-        <div id="player" style="width:100%;height:100%"></div>
+        <iframe id="player" allowfullscreen allow="autoplay; encrypted-media"></iframe>
         <script>
-          // Load iframe only after DOM ready
-          document.addEventListener("DOMContentLoaded", function(){
-            const iframe = document.createElement("iframe");
-            iframe.src = atob("${Buffer.from(iframeURL).toString("base64")}");
-            iframe.allowFullscreen = true;
-            iframe.allow = "autoplay; encrypted-media";
-            document.getElementById("player").appendChild(iframe);
-          });
+          (async () => {
+            try {
+              const blobData = await fetch("${realURL}").then(r => r.blob());
+              const blobURL = URL.createObjectURL(blobData);
+              document.getElementById("player").src = blobURL;
+            } catch (e) {
+              document.body.innerHTML = "<h2 style='color:white;text-align:center;'>Video load failed</h2>";
+            }
+          })();
         </script>
       </body>
       </html>
     `);
   } catch (err) {
-    res.status(500).send("Server Error");
-  }
-}    <body>
-      <iframe src="${iframeURL}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
-    </body>
-    </html>
-  `);
-}
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta name="viewport" content="width=device-width,initial-scale=1.0">
-        <title>Video Player</title>
-        <style>
-          body { margin:0; background:#000; }
-          iframe { border:none; width:100%; height:100vh; }
-        </style>
-      </head>
-      <body>
-        <iframe src="${url}" allowfullscreen allow="autoplay;encrypted-media"></iframe>
-      </body>
-      </html>
+    // Catch any unexpected crash
+    res.status(500).send(`
+      <h2 style="color:white;background:black;text-align:center;padding:20px">
+        Internal Server Error
+      </h2>
     `);
-  } catch (err) {
-    console.error("VIDEO ERROR:", err);
-    res.status(500).send("⚠️ Server Error");
   }
 }
