@@ -42,41 +42,4 @@ export default function handler(req, res) {
   } catch (err) {
     res.status(500).send("Server Error");
   }
-}  <body>  
-    <iframe src="${iframeURL}" allowfullscreen allow="autoplay; encrypted-media"></iframe>  
-  </body>  
-  </html>  
-`);
-
-} catch (err) {
-res.status(500).send("Server Error");
-}
-}         <style>
-          html,body { margin:0; padding:0; height:100%; background:#000; }
-          iframe { width:100%; height:100%; border:none; }
-        </style>
-      </head>
-      <body>
-        <iframe id="player" allowfullscreen allow="autoplay; encrypted-media"></iframe>
-        <script>
-          (async () => {
-            try {
-              // Fetch real video URL as blob
-              const response = await fetch("${iframeURL}");
-              const blob = await response.blob();
-              const blobUrl = URL.createObjectURL(blob);
-              
-              // Set iframe src to blob URL
-              document.getElementById("player").src = blobUrl;
-            } catch (e) {
-              document.body.innerHTML = "<h2 style='color:white;text-align:center;'>Video load failed</h2>";
-            }
-          })();
-        </script>
-      </body>
-      </html>
-    `);
-  } catch {
-    res.status(500).send("Server Error");
-  }
 }
