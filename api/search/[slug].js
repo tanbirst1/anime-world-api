@@ -34,16 +34,21 @@ export default async function handler(req, res) {
 
     let results = [];
 
-    $('.result-item').each((_, el) => {
-      const title = $(el).find('.title').text().trim();
-      let link = $(el).find('a').attr('href');
+    $('ul.post-lst li').each((_, el) => {
+      const title = $(el).find('h2.entry-title').text().trim();
+      let link = $(el).find('a.lnk-blk').attr('href');
       let image = $(el).find('img').attr('src') || $(el).find('img').attr('data-src');
 
-      // Normalize URLs
-      if (link?.startsWith(baseURL)) link = link.replace(baseURL, '');
-      if (image?.startsWith('//')) image = 'https:' + image;
+      // Normalize link → only keep /{slug}
+      if (link?.startsWith(baseURL)) {
+        link = link.replace(baseURL, '');
+      }
+      // Add https if image starts with //
+      if (image?.startsWith('//')) {
+        image = 'https:' + image;
+      }
 
-      if (title) {
+      if (title && link) {
         results.push({ title, link, image });
       }
     });
