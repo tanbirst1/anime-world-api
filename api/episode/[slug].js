@@ -36,20 +36,24 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Episode title fallback chain
+    // Basic episode info
     let title =
       $(".video-player div").first().text().trim() ||
       $("h1.entry-title").text().trim() ||
       $("title").text().trim() ||
       "Unknown";
 
-    // Poster fallback chain
     let poster =
       $("img").first().attr("src") ||
       $("meta[property='og:image']").attr("content") ||
       "";
 
-    // Extract servers safely
+    let description =
+      $(".description p").first().text().trim() ||
+      $("meta[property='og:description']").attr("content") ||
+      "";
+
+    // Video servers only (no episode list section)
     let servers = [];
     $(".video-player iframe").each((i, el) => {
       let src = $(el).attr("src") || $(el).attr("data-src") || "";
@@ -61,13 +65,13 @@ export default async function handler(req, res) {
       }
     });
 
-    // If no servers found, return warning
     if (servers.length === 0) {
       return res.status(404).json({
         status: "error",
-        message: "No video servers found for this episode",
+        message: "No video servers found",
         title,
-        poster
+        poster,
+        description
       });
     }
 
@@ -75,6 +79,7 @@ export default async function handler(req, res) {
       status: "ok",
       title,
       poster,
+      description,
       servers
     });
 
@@ -83,57 +88,5 @@ export default async function handler(req, res) {
       error: "Scraping failed",
       details: err.message
     });
-  }
-}    if (matchPoster) poster = matchPoster[1];
-
-    // Player servers
-    let servers = [];
-    $(".video-player iframe").each((i, el) => {
-      let src = $(el).attr("src") || $(el).attr("data-src");
-      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
-    });
-
-    // Response (no episode list section)
-    res.status(200).json({
-      status: "ok",
-      title,
-      poster,
-      servers
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: "Scraping failed", details: err.message });
-  }
-}    $(".video-player iframe").each((i, el) => {
-      let src = $(el).attr("src") || $(el).attr("data-src");
-      let serverName = $(`.aa-tbs-video li:eq(${i}) .server`).text().trim() || `Server ${i + 1}`;
-      if (src) {
-        servers.push({
-          server: serverName,
-          url: `/v/${encrypt(src)}`
-        });
-      }
-    });
-
-    // Episode list (other episodes in season)
-    let episodes = [];
-    $("#episode_by_temp li").each((i, el) => {
-      let epNum = $(el).find(".num-epi").text().trim();
-      let epName = $(el).find(".entry-title").text().trim();
-      let epThumb = $(el).find("img").attr("src") || "";
-      let epUrl = $(el).find("a.lnk-blk").attr("href") || "";
-      episodes.push({ episode: epNum, title: epName, thumbnail: epThumb, url: epUrl });
-    });
-
-    res.status(200).json({
-      status: "ok",
-      episodeTitle,
-      currentEpisode,
-      servers,
-      episodes
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: "Scraping failed", details: err.message });
   }
 }
