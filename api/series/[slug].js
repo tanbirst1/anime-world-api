@@ -1,22 +1,31 @@
-import fetch from "node-fetch";
-import cheerio from "cheerio";
+const fetch = require("node-fetch");
+const cheerio = require("cheerio");
 
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   try {
     const slug = req.query.slug;
-    if (!slug) return res.status(400).json({ error: "Missing slug" });
+    if (!slug) {
+      return res.status(400).json({ error: "Missing slug" });
+    }
 
     const baseUrl = `https://watchanimeworld.in/series/${slug}/`;
 
-    // Step 1: Fetch series page
+    // Step 1: Fetch main series page
     const htmlRes = await fetch(baseUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!htmlRes.ok) throw new Error(`Failed to load series page: ${htmlRes.status}`);
+    if (!htmlRes.ok) {
+      return res.status(500).json({ error: `Failed to load series page (${htmlRes.status})` });
+    }
     const html = await htmlRes.text();
-    const $ = cheerio.load(html);
+    if (!html || html.trim().length < 100) {
+      return res.status(500).json({ error: "Empty or invalid HTML from series page" });
+    }
 
+    const $ = cheerio.load(html);
     const title = $("h1.entry-title").text().trim() || slug;
     const postId = $(".choose-season ul.aa-cnt li a").first().attr("data-post");
-    if (!postId) throw new Error("Post ID not found");
+    if (!postId) {
+      return res.status(500).json({ error: "Post ID not found" });
+    }
 
     const seasonList = $(".choose-season ul.aa-cnt li a")
       .map((_, el) => $(el).attr("data-season"))
@@ -24,7 +33,7 @@ export default async function handler(req, res) {
 
     let seasonsData = [];
 
-    // Step 2: Loop through each season via AJAX
+    // Step 2: Loop through each season
     for (const seasonNum of seasonList) {
       try {
         const formData = new URLSearchParams();
@@ -43,10 +52,18 @@ export default async function handler(req, res) {
           body: formData
         });
 
-        if (!ajaxRes.ok) throw new Error(`AJAX failed for season ${seasonNum}`);
-        const ajaxHtml = await ajaxRes.text();
-        const $$ = cheerio.load(ajaxHtml);
+        if (!ajaxRes.ok) {
+          seasonsData.push({ season: seasonNum, episodes: [], error: `AJAX failed (${ajaxRes.status})` });
+          continue;
+        }
 
+        const ajaxHtml = await ajaxRes.text();
+        if (!ajaxHtml || ajaxHtml.trim().length < 50) {
+          seasonsData.push({ season: seasonNum, episodes: [], error: "Empty AJAX HTML" });
+          continue;
+        }
+
+        const $$ = cheerio.load(ajaxHtml);
         const episodes = [];
         $$("#episode_by_temp li").each((_, el) => {
           episodes.push({
@@ -57,18 +74,14 @@ export default async function handler(req, res) {
           });
         });
 
-        seasonsData.push({
-          season: seasonNum,
-          episodes
-        });
-
+        seasonsData.push({ season: seasonNum, episodes });
       } catch (err) {
         seasonsData.push({ season: seasonNum, episodes: [], error: err.message });
       }
     }
 
-    // Step 3: Send JSON
-    res.status(200).json({
+    // Step 3: Respond
+    return res.status(200).json({
       title,
       totalSeasons: seasonsData.length,
       totalEpisodes: seasonsData.reduce((sum, s) => sum + s.episodes.length, 0),
@@ -76,6 +89,6 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: `Crash: ${err.message}` });
   }
-}
+};
