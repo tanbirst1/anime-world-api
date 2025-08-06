@@ -6,63 +6,54 @@ export default async function handler(req, res) {
     const slug = req.query.slug;
     const baseUrl = `https://watchanimeworld.in/series/${slug}/`;
 
+    // Fetch main page
     const htmlRes = await fetch(baseUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+    if (!htmlRes.ok) throw new Error(`Failed to load series page`);
     const html = await htmlRes.text();
     const $ = cheerio.load(html);
 
     const title = $("h1.entry-title").text().trim();
     const postId = $(".choose-season ul.aa-cnt li a").first().data("post");
+    if (!postId) throw new Error("Post ID not found");
 
-    let seasons = [];
-    const seasonLinks = $(".choose-season ul.aa-cnt li a");
+    // Get all seasons
+    const seasonLinks = $(".choose-season ul.aa-cnt li a")
+      .map((i, el) => $(el).data("season"))
+      .get();
 
-    // Loop each season
-    for (let i = 0; i < seasonLinks.length; i++) {
-      const seasonNumber = $(seasonLinks[i]).data("season");
-      const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${postId}&season=${seasonNumber}`;
+    // Fetch all seasons in parallel
+    const seasonResults = await Promise.all(
+      seasonLinks.map(async (seasonNumber) => {
+        try {
+          const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${postId}&season=${seasonNumber}`;
+          const ajaxRes = await fetch(ajaxUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
+          if (!ajaxRes.ok) return { season: seasonNumber, episodes: [] };
 
-      const ajaxRes = await fetch(ajaxUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
-      const ajaxHtml = await ajaxRes.text();
-      const $$ = cheerio.load(ajaxHtml);
+          const ajaxHtml = await ajaxRes.text();
+          const $$ = cheerio.load(ajaxHtml);
 
-      let episodes = [];
-      $$("#episode_by_temp li").each((j, el) => {
-        const epCode = $$(el).find(".num-epi").text().trim();
-        const epTitle = $$(el).find("h2.entry-title").text().trim();
-        const epLink = $$(el).find("a.lnk-blk").attr("href");
+          const episodes = [];
+          $$("#episode_by_temp li").each((j, el) => {
+            episodes.push({
+              ep: $$(el).find(".num-epi").text().trim(),
+              title: $$(el).find("h2.entry-title").text().trim(),
+              link: $$(el).find("a.lnk-blk").attr("href")
+            });
+          });
 
-        episodes.push({ ep: epCode, title: epTitle, link: epLink });
-      });
+          return { season: seasonNumber, episodes };
+        } catch {
+          return { season: seasonNumber, episodes: [] };
+        }
+      })
+    );
 
-      seasons.push({ season: seasonNumber, episodes });
-    }
-
+    // Prepare JSON
     const result = {
       title,
-      totalSeasons: seasons.length,
-      totalEpisodes: seasons.reduce((sum, s) => sum + s.episodes.length, 0),
-      seasons
-    };
-
-    res.setHeader("Content-Type", "application/json");
-    res.status(200).json(result);
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}            ep: epCode,
-            title: epTitle,
-            link: epLink
-          });
-        }
-      }
-    });
-
-    const result = {
-      title: title,
-      totalSeasons: seasons.length,
-      totalEpisodes: seasons.reduce((sum, s) => sum + s.episodes.length, 0),
-      seasons: seasons
+      totalSeasons: seasonResults.length,
+      totalEpisodes: seasonResults.reduce((sum, s) => sum + s.episodes.length, 0),
+      seasons: seasonResults
     };
 
     res.setHeader("Content-Type", "application/json");
