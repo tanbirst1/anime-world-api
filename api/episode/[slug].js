@@ -28,13 +28,33 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Episode main details
-    const episodeTitle = $(".video-player div").first().text().trim() || "Unknown Episode";
-    const currentEpisode = $(".num-epi").first().text().trim() || "";
-    
-    // Servers
+    // Episode title
+    const title = $(".video-player div").first().text().trim() || $("h1.entry-title").text().trim() || "Unknown";
+
+    // Episode poster (fallback if available in history script)
+    let poster = $("img").first().attr("src") || "";
+    const matchPoster = html.match(/let image = "(.*?)";/);
+    if (matchPoster) poster = matchPoster[1];
+
+    // Player servers
     let servers = [];
     $(".video-player iframe").each((i, el) => {
+      let src = $(el).attr("src") || $(el).attr("data-src");
+      if (src) servers.push({ server: `Server ${i + 1}`, url: `/v/${encrypt(src)}` });
+    });
+
+    // Response (no episode list section)
+    res.status(200).json({
+      status: "ok",
+      title,
+      poster,
+      servers
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: "Scraping failed", details: err.message });
+  }
+}    $(".video-player iframe").each((i, el) => {
       let src = $(el).attr("src") || $(el).attr("data-src");
       let serverName = $(`.aa-tbs-video li:eq(${i}) .server`).text().trim() || `Server ${i + 1}`;
       if (src) {
