@@ -6,9 +6,9 @@ export default async function handler(req, res) {
     const slug = req.query.slug;
     const baseUrl = `https://watchanimeworld.in/series/${slug}/`;
 
-    // Fetch main page
+    // Fetch series page
     const htmlRes = await fetch(baseUrl, {
-      headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" }
+      headers: { "User-Agent": "Mozilla/5.0" }
     });
     if (!htmlRes.ok) throw new Error("Failed to load series page");
 
@@ -16,30 +16,43 @@ export default async function handler(req, res) {
     const $ = cheerio.load(html);
 
     const title = $("h1.entry-title").text().trim();
+    const postId = $(".choose-season ul.aa-cnt li a").first().attr("data-post");
+    if (!postId) throw new Error("Post ID not found");
 
-    // Get seasons list
-    const seasonLinks = $(".choose-season ul.aa-cnt li a")
-      .map((i, el) => ({
-        season: $(el).attr("data-season"),
-        slugUrl: `${baseUrl}?season=${$(el).attr("data-season")}`
-      }))
+    const seasons = $(".choose-season ul.aa-cnt li a")
+      .map((i, el) => $(el).attr("data-season"))
       .get();
 
     let seasonsData = [];
 
-    // Sequential fetch to avoid memory overload
-    for (const seasonObj of seasonLinks) {
+    // Fetch each season via AJAX
+    for (const seasonNumber of seasons) {
       try {
-        const seasonRes = await fetch(seasonObj.slugUrl, {
-          headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" }
-        });
-        if (!seasonRes.ok) {
-          seasonsData.push({ season: seasonObj.season, episodes: [] });
+        const ajaxRes = await fetch(
+          "https://watchanimeworld.in/wp-admin/admin-ajax.php",
+          {
+            method: "POST",
+            headers: {
+              "User-Agent": "Mozilla/5.0",
+              "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+              "X-Requested-With": "XMLHttpRequest",
+              "Referer": baseUrl
+            },
+            body: new URLSearchParams({
+              action: "action_select_season", // Correct action for dropdown
+              post: postId,
+              season: seasonNumber
+            })
+          }
+        );
+
+        if (!ajaxRes.ok) {
+          seasonsData.push({ season: seasonNumber, episodes: [] });
           continue;
         }
 
-        const seasonHtml = await seasonRes.text();
-        const $$ = cheerio.load(seasonHtml);
+        const ajaxHtml = await ajaxRes.text();
+        const $$ = cheerio.load(ajaxHtml);
 
         const episodes = [];
         $$("#episode_by_temp li").each((_, el) => {
@@ -50,9 +63,9 @@ export default async function handler(req, res) {
           });
         });
 
-        seasonsData.push({ season: seasonObj.season, episodes });
+        seasonsData.push({ season: seasonNumber, episodes });
       } catch {
-        seasonsData.push({ season: seasonObj.season, episodes: [] });
+        seasonsData.push({ season: seasonNumber, episodes: [] });
       }
     }
 
