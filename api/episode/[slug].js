@@ -8,33 +8,83 @@ const SECRET_KEY = crypto.createHash("sha256")
 const IV = Buffer.alloc(16, 0);
 
 function encrypt(url) {
-  const cipher = crypto.createCipheriv("aes-256-cbc", SECRET_KEY, IV);
-  let encrypted = cipher.update(url, "utf8", "base64");
-  encrypted += cipher.final("base64");
-  return encrypted.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  try {
+    const cipher = crypto.createCipheriv("aes-256-cbc", SECRET_KEY, IV);
+    let encrypted = cipher.update(url || "", "utf8", "base64");
+    encrypted += cipher.final("base64");
+    return encrypted.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  } catch {
+    return "";
+  }
 }
 
 export default async function handler(req, res) {
   try {
     const { slug } = req.query;
-    if (!slug) return res.status(400).json({ error: "Slug missing" });
+    if (!slug) {
+      return res.status(400).json({ error: "Slug missing" });
+    }
 
     const baseURL = "https://watchanimeworld.in";
     const pageURL = `${baseURL}/episode/${slug}/`;
 
     const response = await fetch(pageURL, { headers: { "User-Agent": "Mozilla/5.0" } });
-    if (!response.ok) return res.status(500).json({ error: "Failed to fetch episode page" });
+    if (!response.ok) {
+      return res.status(500).json({ error: "Failed to fetch episode page" });
+    }
 
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // Episode title
-    const title = $(".video-player div").first().text().trim() || $("h1.entry-title").text().trim() || "Unknown";
+    // Episode title fallback chain
+    let title =
+      $(".video-player div").first().text().trim() ||
+      $("h1.entry-title").text().trim() ||
+      $("title").text().trim() ||
+      "Unknown";
 
-    // Episode poster (fallback if available in history script)
-    let poster = $("img").first().attr("src") || "";
-    const matchPoster = html.match(/let image = "(.*?)";/);
-    if (matchPoster) poster = matchPoster[1];
+    // Poster fallback chain
+    let poster =
+      $("img").first().attr("src") ||
+      $("meta[property='og:image']").attr("content") ||
+      "";
+
+    // Extract servers safely
+    let servers = [];
+    $(".video-player iframe").each((i, el) => {
+      let src = $(el).attr("src") || $(el).attr("data-src") || "";
+      if (src.trim()) {
+        servers.push({
+          server: `Server ${i + 1}`,
+          url: `/v/${encrypt(src)}`
+        });
+      }
+    });
+
+    // If no servers found, return warning
+    if (servers.length === 0) {
+      return res.status(404).json({
+        status: "error",
+        message: "No video servers found for this episode",
+        title,
+        poster
+      });
+    }
+
+    res.status(200).json({
+      status: "ok",
+      title,
+      poster,
+      servers
+    });
+
+  } catch (err) {
+    res.status(500).json({
+      error: "Scraping failed",
+      details: err.message
+    });
+  }
+}    if (matchPoster) poster = matchPoster[1];
 
     // Player servers
     let servers = [];
