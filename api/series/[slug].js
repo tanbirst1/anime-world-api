@@ -6,7 +6,7 @@ export default async function handler(req, res) {
     const slug = req.query.slug;
     const baseUrl = `https://watchanimeworld.in/series/${slug}/`;
 
-    // Fetch series page
+    // Fetch main page
     const htmlRes = await fetch(baseUrl, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
@@ -16,25 +16,60 @@ export default async function handler(req, res) {
     const $ = cheerio.load(html);
 
     const title = $("h1.entry-title").text().trim();
-    const postId = $(".choose-season ul.aa-cnt li a").first().attr("data-post");
-    if (!postId) throw new Error("Post ID not found");
 
-    const seasons = $(".choose-season ul.aa-cnt li a")
-      .map((i, el) => $(el).attr("data-season"))
+    // Get all seasons from dropdown
+    const seasonLinks = $(".choose-season ul.aa-cnt li a")
+      .map((i, el) => ({
+        season: $(el).attr("data-season"),
+        post: $(el).attr("data-post"),
+        slugUrl: `${baseUrl}?season=${$(el).attr("data-season")}`
+      }))
       .get();
 
-    // Fetch all seasons episodes
+    // Fetch all seasons in parallel
     const seasonResults = await Promise.all(
-      seasons.map(async (seasonNumber) => {
+      seasonLinks.map(async (seasonObj) => {
         try {
-          const ajaxRes = await fetch(
-            "https://watchanimeworld.in/wp-admin/admin-ajax.php",
-            {
-              method: "POST",
-              headers: {
-                "User-Agent": "Mozilla/5.0",
-                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With": "XMLHttpRequest",
+          const seasonRes = await fetch(seasonObj.slugUrl, {
+            headers: { "User-Agent": "Mozilla/5.0" }
+          });
+          if (!seasonRes.ok) return { season: seasonObj.season, episodes: [] };
+
+          const seasonHtml = await seasonRes.text();
+          const $$ = cheerio.load(seasonHtml);
+
+          const episodes = [];
+          $$("#episode_by_temp li").each((_, el) => {
+            episodes.push({
+              ep: $$(el).find(".num-epi").text().trim(),
+              title: $$(el).find("h2.entry-title").text().trim(),
+              link: $$(el).find("a.lnk-blk").attr("href")
+            });
+          });
+
+          return { season: seasonObj.season, episodes };
+        } catch {
+          return { season: seasonObj.season, episodes: [] };
+        }
+      })
+    );
+
+    const result = {
+      title,
+      totalSeasons: seasonResults.length,
+      totalEpisodes: seasonResults.reduce(
+        (sum, s) => sum + s.episodes.length,
+        0
+      ),
+      seasons: seasonResults
+    };
+
+    res.setHeader("Content-Type", "application/json");
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}                "X-Requested-With": "XMLHttpRequest",
                 "Referer": baseUrl
               },
               body: new URLSearchParams({
