@@ -4,19 +4,17 @@ import * as cheerio from "cheerio";
 export default async function handler(req, res) {
   try {
     const slug = req.query.slug;
-    const baseUrl = `https://watchanimeworld.in/series/${slug}/`;
+    const seriesUrl = `https://watchanimeworld.in/series/${slug}/`;
 
-    // Fetch series page
-    const htmlRes = await fetch(baseUrl, {
+    // Fetch the main series page
+    const htmlRes = await fetch(seriesUrl, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
-    if (!htmlRes.ok) throw new Error("Failed to load series page");
-
     const html = await htmlRes.text();
     const $ = cheerio.load(html);
 
     const title = $("h1.entry-title").text().trim();
-    const postId = $(".choose-season ul.aa-cnt li a").first().attr("data-post");
+    const postId = $(".choose-season ul.aa-cnt li a").attr("data-post");
     if (!postId) throw new Error("Post ID not found");
 
     const seasons = $(".choose-season ul.aa-cnt li a")
@@ -25,8 +23,8 @@ export default async function handler(req, res) {
 
     let seasonsData = [];
 
-    // Fetch each season via AJAX
-    for (const seasonNumber of seasons) {
+    // Fetch each season's episodes via AJAX
+    for (const seasonNum of seasons) {
       try {
         const ajaxRes = await fetch(
           "https://watchanimeworld.in/wp-admin/admin-ajax.php",
@@ -36,20 +34,15 @@ export default async function handler(req, res) {
               "User-Agent": "Mozilla/5.0",
               "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
               "X-Requested-With": "XMLHttpRequest",
-              "Referer": baseUrl
+              "Referer": seriesUrl
             },
             body: new URLSearchParams({
-              action: "action_select_season", // Correct action for dropdown
+              action: "action_select_season", // Common AA theme action
               post: postId,
-              season: seasonNumber
+              season: seasonNum
             })
           }
         );
-
-        if (!ajaxRes.ok) {
-          seasonsData.push({ season: seasonNumber, episodes: [] });
-          continue;
-        }
 
         const ajaxHtml = await ajaxRes.text();
         const $$ = cheerio.load(ajaxHtml);
@@ -63,9 +56,9 @@ export default async function handler(req, res) {
           });
         });
 
-        seasonsData.push({ season: seasonNumber, episodes });
+        seasonsData.push({ season: seasonNum, episodes });
       } catch {
-        seasonsData.push({ season: seasonNumber, episodes: [] });
+        seasonsData.push({ season: seasonNum, episodes: [] });
       }
     }
 
@@ -76,7 +69,6 @@ export default async function handler(req, res) {
       seasons: seasonsData
     };
 
-    res.setHeader("Content-Type", "application/json");
     res.status(200).json(result);
   } catch (err) {
     res.status(500).json({ error: err.message });
