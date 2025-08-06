@@ -11,7 +11,7 @@
 
     { "src": "^/episodes/page/?$", "dest": "/api/episodes/page.js" },
     { "src": "^/episodes/page/([0-9]+)$", "dest": "/api/episodes/page.js?page=$1" },
-    { "src": "^/episode/(.*)$", "dest": "/api/episodes/[slug].js?slug=$1" },
+    { "src": "^/episode/(.*)$", "dest": "/api/episode/[slug].js?slug=$1" },
 
     { "src": "^/v/(.*)$", "dest": "/api/video.js?id=$1" },
 
