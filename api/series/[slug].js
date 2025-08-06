@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
     // Fetch main page
     const htmlRes = await fetch(baseUrl, {
-      headers: { "User-Agent": "Mozilla/5.0" }
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" }
     });
     if (!htmlRes.ok) throw new Error("Failed to load series page");
 
@@ -17,97 +17,50 @@ export default async function handler(req, res) {
 
     const title = $("h1.entry-title").text().trim();
 
-    // Get all seasons from dropdown
+    // Get seasons list
     const seasonLinks = $(".choose-season ul.aa-cnt li a")
       .map((i, el) => ({
         season: $(el).attr("data-season"),
-        post: $(el).attr("data-post"),
         slugUrl: `${baseUrl}?season=${$(el).attr("data-season")}`
       }))
       .get();
 
-    // Fetch all seasons in parallel
-    const seasonResults = await Promise.all(
-      seasonLinks.map(async (seasonObj) => {
-        try {
-          const seasonRes = await fetch(seasonObj.slugUrl, {
-            headers: { "User-Agent": "Mozilla/5.0" }
-          });
-          if (!seasonRes.ok) return { season: seasonObj.season, episodes: [] };
+    let seasonsData = [];
 
-          const seasonHtml = await seasonRes.text();
-          const $$ = cheerio.load(seasonHtml);
-
-          const episodes = [];
-          $$("#episode_by_temp li").each((_, el) => {
-            episodes.push({
-              ep: $$(el).find(".num-epi").text().trim(),
-              title: $$(el).find("h2.entry-title").text().trim(),
-              link: $$(el).find("a.lnk-blk").attr("href")
-            });
-          });
-
-          return { season: seasonObj.season, episodes };
-        } catch {
-          return { season: seasonObj.season, episodes: [] };
+    // Sequential fetch to avoid memory overload
+    for (const seasonObj of seasonLinks) {
+      try {
+        const seasonRes = await fetch(seasonObj.slugUrl, {
+          headers: { "User-Agent": "Mozilla/5.0 (compatible; Bot/1.0)" }
+        });
+        if (!seasonRes.ok) {
+          seasonsData.push({ season: seasonObj.season, episodes: [] });
+          continue;
         }
-      })
-    );
+
+        const seasonHtml = await seasonRes.text();
+        const $$ = cheerio.load(seasonHtml);
+
+        const episodes = [];
+        $$("#episode_by_temp li").each((_, el) => {
+          episodes.push({
+            ep: $$(el).find(".num-epi").text().trim(),
+            title: $$(el).find("h2.entry-title").text().trim(),
+            link: $$(el).find("a.lnk-blk").attr("href")
+          });
+        });
+
+        seasonsData.push({ season: seasonObj.season, episodes });
+      } catch {
+        seasonsData.push({ season: seasonObj.season, episodes: [] });
+      }
+    }
 
     const result = {
       title,
-      totalSeasons: seasonResults.length,
-      totalEpisodes: seasonResults.reduce(
-        (sum, s) => sum + s.episodes.length,
-        0
-      ),
-      seasons: seasonResults
-    };
-
-    res.setHeader("Content-Type", "application/json");
-    res.status(200).json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-}                "X-Requested-With": "XMLHttpRequest",
-                "Referer": baseUrl
-              },
-              body: new URLSearchParams({
-                action: "aa_load_episodes", // Correct action for AA themes
-                post: postId,
-                season: seasonNumber
-              })
-            }
-          );
-
-          if (!ajaxRes.ok) return { season: seasonNumber, episodes: [] };
-          const ajaxHtml = await ajaxRes.text();
-          const $$ = cheerio.load(ajaxHtml);
-
-          const episodes = [];
-          $$("#episode_by_temp li").each((_, el) => {
-            episodes.push({
-              ep: $$(el).find(".num-epi").text().trim(),
-              title: $$(el).find("h2.entry-title").text().trim(),
-              link: $$(el).find("a.lnk-blk").attr("href")
-            });
-          });
-
-          return { season: seasonNumber, episodes };
-        } catch {
-          return { season: seasonNumber, episodes: [] };
-        }
-      })
-    );
-
-    const result = {
-      title,
-      totalSeasons: seasonResults.length,
-      totalEpisodes: seasonResults.reduce(
-        (sum, s) => sum + s.episodes.length,
-        0
-      ),
-      seasons: seasonResults
+      totalSeasons: seasonsData.length,
+      totalEpisodes: seasonsData.reduce((sum, s) => sum + s.episodes.length, 0),
+      seasons: seasonsData
     };
 
     res.setHeader("Content-Type", "application/json");
