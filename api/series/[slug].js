@@ -1,7 +1,6 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-// Logger with timestamp
 function log(message, data = null) {
   const time = new Date().toISOString();
   console.log(`[${time}] ${message}`);
@@ -18,10 +17,10 @@ export default async function handler(req, res) {
     }
 
     const seasonNumber = parseInt(season) || 1;
-    const episodeUrl = `https://watchanimeworld.in/episode/${slug}-${seasonNumber}x1/`;
+    const seriesUrl = `https://watchanimeworld.in/anime/${slug}/`;
 
-    log("Fetching URL", episodeUrl);
-    const response = await fetch(episodeUrl, {
+    log("Fetching series page", seriesUrl);
+    const response = await fetch(seriesUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115.0 Safari/537.36",
@@ -29,7 +28,7 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
-      const msg = `Episode page not found (status ${response.status})`;
+      const msg = `Series page not found (status ${response.status})`;
       log(msg);
       return res.status(404).json({ error: msg });
     }
@@ -41,7 +40,6 @@ export default async function handler(req, res) {
       $("h1.entry-title").text().trim() || slug.replace(/-/g, " ");
     log("Series title", seriesTitle);
 
-    // Extract all available seasons
     const seasons = [];
     $(".se-c").each((i, el) => {
       const seasonTitle = $(el).find(".season-title").text().trim();
@@ -53,7 +51,7 @@ export default async function handler(req, res) {
     const seasonBlock = $(".se-c").get(seasonIndex);
 
     if (!seasonBlock) {
-      const msg = `Season block not found for index: ${seasonIndex}`;
+      const msg = `Season ${seasonNumber} not found. Total available: ${seasons.length}`;
       log(msg);
       return res.status(404).json({ error: msg });
     }
