@@ -43,4 +43,13 @@ export default async (req, res) => {
       error: "Episodes could not be loaded. Please try again later."
     });
   }
+};    console.error("Failed to fetch episodes:", err.message);
+    return res.status(200).json({
+      title: slug.replace(/-/g, ' '),
+      totalSeasons: 1,
+      currentSeason: 1,
+      episodes: [],
+      error: "Episodes could not be loaded. Please try again later."
+    });
+  }
 };
