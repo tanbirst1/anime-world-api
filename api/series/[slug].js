@@ -1,40 +1,118 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-// Logger
-function log(msg, data = null) {
-  const ts = new Date().toISOString();
-  console.log(`[${ts}] ${msg}`);
+// Logger with timestamp
+function log(message, data = null) {
+  const timestamp = new Date().toISOString();
+  console.log(`[${timestamp}] ${message}`);
   if (data) console.dir(data, { depth: null });
 }
 
-// Main API handler
+// Sanitize slug (remove -1x1 etc.)
+function normalizeSlug(slug) {
+  const match = slug.match(/^(.*)-\d+x\d+$/);
+  return match ? match[1] : slug;
+}
+
 export default async function handler(req, res) {
   try {
-    let { slug } = req.query;
-    let season = parseInt(req.query.season) || 1;
+    const { slug: rawSlug } = req.query;
+    const season = parseInt(req.query.season) || 1;
 
-    if (!slug) {
-      log("Missing slug");
-      return res.status(400).json({ error: "Missing slug." });
+    if (!rawSlug) {
+      log("Missing slug in query");
+      return res.status(400).json({ error: "Missing slug in query" });
     }
 
-    const episodeUrl = `https://watchanimeworld.in/episode/${slug}/`;
-    log("Fetching episode page", episodeUrl);
+    const slug = normalizeSlug(rawSlug);
+    const url = `https://watchanimeworld.in/episode/${rawSlug}/`;
 
-    const response = await fetch(episodeUrl, {
+    log("Fetching episode URL", url);
+
+    const response = await fetch(url, {
       headers: {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115.0 Safari/537.36",
-      },
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/115.0 Safari/537.36"
+      }
     });
 
     if (!response.ok) {
-      const msg = `Episode page not found (status ${response.status})`;
+      const msg = `Failed to fetch episode page. Status ${response.status}`;
       log(msg);
       return res.status(404).json({ error: msg });
     }
 
+    const html = await response.text();
+    if (!html || html.length < 500) {
+      return res.status(500).json({ error: "Empty or blocked HTML response." });
+    }
+
+    const $ = cheerio.load(html);
+
+    // Extract main title
+    const rawTitle = $("h1.entry-title").text().trim();
+    const title = rawTitle.replace(/Episode\s\d+/, "").trim() || slug.replace(/-/g, " ");
+    log("Parsed title", title);
+
+    // Try to find .se-c block
+    const seasonBlocks = $(".se-c");
+    if (!seasonBlocks || seasonBlocks.length === 0) {
+      log("No season blocks found on episode page");
+      return res.status(404).json({
+        error: "Season block not found. Maybe try different episode or slug."
+      });
+    }
+
+    const seasonIndex = season - 1;
+    const seasonBlock = seasonBlocks.get(seasonIndex);
+    if (!seasonBlock) {
+      log(`Season ${season} not found. Only ${seasonBlocks.length} available.`);
+      return res.status(404).json({
+        error: `Season ${season} not found. Available: ${seasonBlocks.length}`
+      });
+    }
+
+    const episodes = [];
+
+    $(seasonBlock)
+      .find(".episodios li")
+      .each((i, el) => {
+        try {
+          const epTitle = $(el).find(".episodiotitle").text().trim();
+          const epHref = $(el).find("a").attr("href");
+          const epSlug = epHref?.split("/episode/")[1]?.replace(/\//g, "");
+
+          if (epSlug) {
+            episodes.push({
+              title: epTitle || `Episode ${i + 1}`,
+              slug: epSlug
+            });
+          }
+        } catch (e) {
+          log("Failed to parse one episode item", e.message);
+        }
+      });
+
+    if (episodes.length === 0) {
+      log("No episodes found inside season block");
+      return res.status(404).json({ error: "No episodes found for this season." });
+    }
+
+    return res.status(200).json({
+      title,
+      totalSeasons: seasonBlocks.length,
+      currentSeason: season,
+      episodes
+    });
+  } catch (err) {
+    log("Fatal serverless crash", err.stack || err.message);
+    return res.status(500).json({
+      error: "Serverless function crashed.",
+      message: err.message,
+      stack: err.stack
+    });
+  }
+}
     const html = await response.text();
     const $ = cheerio.load(html);
 
