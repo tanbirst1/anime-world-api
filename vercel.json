@@ -1,19 +1,26 @@
 {
   "version": 2,
   "routes": [
-    
+    // Movies
     { "src": "^/movies/page/?$", "dest": "/api/movies/page.js" },
     { "src": "^/movies/page/([0-9]+)$", "dest": "/api/movies/page.js?page=$1" },
     { "src": "^/movies/(.*)$", "dest": "/api/movies/[slug].js?slug=$1" },
 
+    // Episodes
     { "src": "^/episodes/page/?$", "dest": "/api/episodes/page.js" },
     { "src": "^/episodes/page/([0-9]+)$", "dest": "/api/episodes/page.js?page=$1" },
     { "src": "^/episode/(.*)$", "dest": "/api/episode/[slug].js?slug=$1" },
 
+    // Series (✅ newly added)
+    { "src": "^/series/(.*)$", "dest": "/api/series/[slug].js?slug=$1" },
+
+    // Search
     { "src": "^/search/(.*)$", "dest": "/api/search/[slug].js?slug=$1" },
 
+    // Video
     { "src": "^/v/(.*)$", "dest": "/api/video.js?id=$1" },
 
-    { "src": "/", "dest": "/api/index.js" }
+    // Index route
+    { "src": "^/$", "dest": "/api/index.js" }
   ]
 }
