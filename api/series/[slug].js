@@ -1,16 +1,26 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
+// Logger with timestamp
+function log(message, data = null) {
+  const time = new Date().toISOString();
+  console.log(`[${time}] ${message}`);
+  if (data) console.dir(data, { depth: null });
+}
+
 export default async function handler(req, res) {
   try {
     const { slug, season } = req.query;
-    const seasonNumber = parseInt(season) || 1;
 
     if (!slug) {
-      return res.status(400).json({ error: "Missing slug in query." });
+      log("Missing 'slug' in query");
+      return res.status(400).json({ error: "Missing 'slug' in query." });
     }
 
+    const seasonNumber = parseInt(season) || 1;
     const episodeUrl = `https://watchanimeworld.in/episode/${slug}-${seasonNumber}x1/`;
+
+    log("Fetching URL", episodeUrl);
     const response = await fetch(episodeUrl, {
       headers: {
         "User-Agent":
@@ -19,7 +29,9 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
-      return res.status(404).json({ error: "Episode page not found." });
+      const msg = `Episode page not found (status ${response.status})`;
+      log(msg);
+      return res.status(404).json({ error: msg });
     }
 
     const html = await response.text();
@@ -27,39 +39,50 @@ export default async function handler(req, res) {
 
     const seriesTitle =
       $("h1.entry-title").text().trim() || slug.replace(/-/g, " ");
+    log("Series title", seriesTitle);
 
     // Extract all available seasons
     const seasons = [];
     $(".se-c").each((i, el) => {
       const seasonTitle = $(el).find(".season-title").text().trim();
-      if (seasonTitle) {
-        seasons.push(seasonTitle);
-      }
+      if (seasonTitle) seasons.push(seasonTitle);
     });
+    log("Total seasons found", seasons.length);
 
     const seasonIndex = seasonNumber - 1;
     const seasonBlock = $(".se-c").get(seasonIndex);
 
+    if (!seasonBlock) {
+      const msg = `Season block not found for index: ${seasonIndex}`;
+      log(msg);
+      return res.status(404).json({ error: msg });
+    }
+
     const episodes = [];
 
-    if (seasonBlock) {
-      $(seasonBlock)
-        .find(".episodios li")
-        .each((i, el) => {
-          const epTitle = $(el).find(".episodiotitle").text().trim();
-          const epLink = $(el).find("a").attr("href");
+    $(seasonBlock)
+      .find(".episodios li")
+      .each((i, el) => {
+        const epTitle = $(el).find(".episodiotitle").text().trim();
+        const epLink = $(el).find("a").attr("href") || "";
 
-          const epSlug = epLink?.split("/episode/")[1]?.replaceAll("/", "");
-          if (epSlug) {
-            episodes.push({
-              title: epTitle || `Episode ${i + 1}`,
-              slug: epSlug,
-            });
-          }
-        });
-    } else {
-      return res.status(404).json({ error: "Season not found." });
-    }
+        let epSlug = null;
+        if (epLink.includes("/episode/")) {
+          const parts = epLink.split("/episode/");
+          if (parts[1]) epSlug = parts[1].replace(/\//g, "");
+        }
+
+        if (epSlug) {
+          episodes.push({
+            title: epTitle || `Episode ${i + 1}`,
+            slug: epSlug,
+          });
+        } else {
+          log("Invalid episode link found", epLink);
+        }
+      });
+
+    log("Episodes extracted", episodes.length);
 
     return res.status(200).json({
       title: seriesTitle,
@@ -68,48 +91,11 @@ export default async function handler(req, res) {
       episodes,
     });
   } catch (err) {
-    console.error("Scraper error:", err.message);
+    log("Unexpected error", err.stack || err.message);
     return res.status(500).json({
-      error: "Scraper failed",
+      error: "Unexpected error",
       message: err.message,
+      stack: err.stack,
     });
   }
-}          if (epSlug) {
-            episodes.push({ title: epTitle, slug: epSlug });
-          }
-        });
-    }
-
-    res.status(200).json({
-      title: seriesTitle,
-      totalSeasons: seasons.length,
-      currentSeason: parseInt(seasonNumber),
-      episodes,
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Serverless function crashed", message: err.message });
-  }
-};        title: $(el).find("h2.entry-title").text().trim(),
-        link: $(el).find("a.lnk-blk").attr("href"),
-        thumbnail: $(el).find("img").attr("src")
-      });
-    });
-
-    return res.status(200).json({
-      title,
-      totalSeasons,
-      currentSeason,
-      totalEpisodes: episodes.length,
-      episodes
-    });
-  } catch (err) {
-    return res.status(200).json({
-      error: err.message,
-      title: slug,
-      totalSeasons: 0,
-      currentSeason: "1",
-      totalEpisodes: 0,
-      episodes: []
-    });
-  }
-};
+}
