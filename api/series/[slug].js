@@ -8,7 +8,6 @@ export default async function handler(req, res) {
 
     const baseURL = "https://watchanimeworld.in";
 
-    // Try these slug formats in order (without trailing slash)
     const trySlugs = [
       `${slug}-1x1`,
       `${slug}-episode-1`
@@ -18,9 +17,7 @@ export default async function handler(req, res) {
     let usedSlug = null;
 
     for (const trySlug of trySlugs) {
-      // Normalize URL — no trailing slash
       const pageURL = `${baseURL}/episode/${trySlug}`.replace(/\/+$/, "");
-
       const response = await fetch(pageURL, {
         headers: { "User-Agent": "Mozilla/5.0" }
       });
@@ -41,11 +38,9 @@ export default async function handler(req, res) {
 
     const $ = cheerio.load(html);
 
-    // Episode main details
     const episodeTitle = $(".video-player div").first().text().trim() || "Unknown Episode";
     const currentEpisode = $(".num-epi").first().text().trim() || "";
 
-    // Episode list
     let episodes = [];
     $("#episode_by_temp li").each((i, el) => {
       let epNum = $(el).find(".num-epi").text().trim();
