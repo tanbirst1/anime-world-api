@@ -27,97 +27,63 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const title = $("h1.entry-title").text().trim() || "Unknown";
-    const poster = fixURL(
-      $("meta[property='og:image']").attr("content") ||
-      $(".post-thumbnail img").attr("src") ||
-      $(".entry-header img").attr("src")
-    );
+    const title = $("h1.entry-title").text().trim() || slug.replace(/-/g, " ");
+    const poster =
+      fixURL(
+        $("meta[property='og:image']").attr("content") ||
+        $(".post-thumbnail img").attr("src") ||
+        $(".entry-header img").attr("src")
+      ) || "";
     const description =
       $(".description p").first().text().trim() ||
       $("meta[name='description']").attr("content") ||
       "";
 
-    const episodes = [];
+    const allEpisodes = [];
     const seasonSet = new Set();
 
     $("a[href*='/episode/']").each((_, el) => {
       const link = $(el).attr("href");
       const name = $(el).text().trim();
-      const fullURL = new URL(link, baseURL).pathname;
+      const img = $(el).find("img").attr("src") ||
+                  $(el).parent().find("img").attr("src") ||
+                  "";
 
       const match = link.match(/-(\d+)x(\d+)\//);
       if (match) {
-        const [_, s, ep] = match;
-        const seasonNum = parseInt(s);
+        const seasonNum = parseInt(match[1]);
+        const episodeNum = parseInt(match[2]);
         seasonSet.add(seasonNum);
 
-        if (seasonNum === parseInt(season)) {
-          const thumb = $(el).find("img").attr("src") ||
-                        $(el).parent().find("img").attr("src") ||
-                        "";
-
-          episodes.push({
-            name: `Episode ${ep}`,
-            url: fullURL,
-            poster: fixURL(thumb)
-          });
-        }
+        allEpisodes.push({
+          season: seasonNum,
+          episode: episodeNum,
+          name: name || `Episode ${episodeNum}`,
+          url: new URL(link, baseURL).pathname,
+          poster: fixURL(img)
+        });
       }
     });
 
-    const totalSeasons = seasonSet.size > 0 ? Math.max(...seasonSet) : 1;
+    const currentSeason = parseInt(season);
+    const filteredEpisodes = allEpisodes
+      .filter((ep) => ep.season === currentSeason)
+      .sort((a, b) => a.episode - b.episode);
 
     res.status(200).json({
       status: "ok",
       title,
-      poster,
       description,
-      total_seasons: totalSeasons,
-      current_season: parseInt(season),
-      episodes
-    });
-  } catch (err) {
-    res.status(500).json({ error: "Scraping failed", details: err.message });
-  }
-}      $(".description p").first().text().trim() ||
-      $("meta[name='description']").attr("content") ||
-      "";
-
-    const episodes = [];
-    const seasonSet = new Set();
-
-    $("a[href*='/episode/']").each((_, el) => {
-      const link = $(el).attr("href");
-      const name = $(el).text().trim();
-      const fullURL = new URL(link, baseURL).pathname;
-
-      // Detect season
-      const match = link.match(/-(\d+)x\d+\//);
-      if (match) seasonSet.add(parseInt(match[1]));
-
-      // Try to get episode thumbnail if exists (usually inside a parent element)
-      const thumb = $(el).find("img").attr("src") ||
-                    $(el).parent().find("img").attr("src") ||
-                    "";
-
-      episodes.push({
-        name: name || fullURL.split("/").filter(Boolean).pop().replace(/-/g, " "),
-        url: fullURL,
-        poster: fixURL(thumb)
-      });
-    });
-
-    const totalSeasons = seasonSet.size > 0 ? Math.max(...seasonSet) : 1;
-
-    res.status(200).json({
-      status: "ok",
-      title,
       poster,
-      description,
-      total_seasons: totalSeasons,
-      current_season: 1,
-      episodes
+      total_seasons: Math.max(...seasonSet),
+      current_season: currentSeason,
+      total_episodes: filteredEpisodes.length,
+      episodes: filteredEpisodes.map((ep) => ({
+        episode: ep.episode,
+        name: ep.name,
+        url: ep.url,
+        poster: ep.poster
+      }))
     });
   } catch (err) {
     res.status(500).json({ error: "Scraping failed", details: err.message });
