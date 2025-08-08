@@ -8,7 +8,7 @@ export default async function handler(req, res) {
 
     const baseURL = "https://watchanimeworld.in";
 
-    // Try these slug formats in order
+    // Try these slug formats in order (without trailing slash)
     const trySlugs = [
       `${slug}-1x1`,
       `${slug}-episode-1`
@@ -18,7 +18,9 @@ export default async function handler(req, res) {
     let usedSlug = null;
 
     for (const trySlug of trySlugs) {
-      const pageURL = `${baseURL}/episode/${trySlug}/`;
+      // Normalize URL — no trailing slash
+      const pageURL = `${baseURL}/episode/${trySlug}`.replace(/\/+$/, "");
+
       const response = await fetch(pageURL, {
         headers: { "User-Agent": "Mozilla/5.0" }
       });
@@ -32,7 +34,7 @@ export default async function handler(req, res) {
 
     if (!html) {
       return res.status(404).json({
-        error: "Episode not found. Tried slug variants",
+        error: "Episode not found. Tried slug variants.",
         tried: trySlugs
       });
     }
@@ -49,7 +51,7 @@ export default async function handler(req, res) {
       let epNum = $(el).find(".num-epi").text().trim();
       let epName = $(el).find(".entry-title").text().trim();
       let epThumb = $(el).find("img").attr("src") || "";
-      let epUrl = $(el).find("a.lnk-blk").attr("href") || "";
+      let epUrl = ($(el).find("a.lnk-blk").attr("href") || "").replace(/\/+$/, "");
       episodes.push({ episode: epNum, title: epName, thumbnail: epThumb, url: epUrl });
     });
 
