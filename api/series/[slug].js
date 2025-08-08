@@ -10,10 +10,10 @@ export default async function handler(req, res) {
     const baseURL = "https://watchanimeworld.in";
     const seriesURL = `${baseURL}/series/${slug}/`;
 
-    // Fetch the series page
     const response = await fetch(seriesURL, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
+
     if (!response.ok) {
       return res.status(404).json({ error: "Series not found" });
     }
@@ -21,38 +21,39 @@ export default async function handler(req, res) {
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    // 1) Title
+    // Get series title
     const title = $("h1.entry-title").text().trim() || slug.replace(/-/g, " ");
 
-    // 2) Detect all seasons
+    // Count available seasons
     const seasons = [];
     $(".choose-season .aa-cnt li.sel-temp a").each((_, el) => {
-      const num = parseInt($(el).attr("data-season"));
-      if (!isNaN(num)) seasons.push(num);
+      const season = parseInt($(el).attr("data-season"));
+      if (!isNaN(season)) seasons.push(season);
     });
     const total_seasons = seasons.length || 1;
 
-    // 3) Always use season 1
+    // Always select Season 1
     const current_season = 1;
-
-    // 4) Extract episodes for season 1
     const episodes = [];
+
     $("#episode_by_temp li").each((_, li) => {
-      const numEpi = $(li).find(".num-epi").text().trim();    // e.g. "1x3"
-      const match  = numEpi.match(/^(\d+)x(\d+)$/);
-      if (!match || parseInt(match[1]) !== current_season) return;
+      const numEpi = $(li).find(".num-epi").text().trim(); // e.g. "1x2"
+      const match = numEpi.match(/^(\d+)x(\d+)$/);
+      if (!match) return;
+      const [_, seasonNum, episodeNum] = match.map(Number);
+      if (seasonNum !== current_season) return;
 
-      const number = numEpi;
-      const name   = $(li).find("h2.entry-title").text().trim();
-      const href   = $(li).find("a.lnk-blk").attr("href");
-      if (!name || !href) return;
+      const episodeTitle = $(li).find("h2.entry-title").text().trim();
+      const href = $(li).find("a.lnk-blk").attr("href");
+      if (!href || !episodeTitle) return;
 
-      // Normalize to absolute URL
-      const url = href.startsWith("http")
-        ? href
-        : baseURL + href;
+      const url = href.startsWith("http") ? href : baseURL + href;
 
-      episodes.push({ number, title: name, url });
+      episodes.push({
+        number: `1x${episodeNum}`,
+        title: episodeTitle,
+        url
+      });
     });
 
     res.status(200).json({
@@ -64,7 +65,7 @@ export default async function handler(req, res) {
       episodes
     });
 
-  } catch (err) {
-    res.status(500).json({ error: "Scraping failed", details: err.message });
+  } catch (error) {
+    res.status(500).json({ error: "Scraping failed", details: error.message });
   }
 }
