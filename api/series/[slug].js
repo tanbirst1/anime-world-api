@@ -1,40 +1,68 @@
+// File: /api/series/[slug].js
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
-  const { slug, season = 1 } = req.query;
-  const url = `https://watchanimeworld.in/${slug}/`;
-
   try {
-    const response = await fetch(url);
+    const { slug } = req.query;
+    if (!slug) return res.status(400).json({ error: "Missing slug" });
+
+    const baseURL = "https://watchanimeworld.in";
+    const seriesURL = `${baseURL}/series/${slug}/`;
+
+    // 1) Fetch the page
+    const response = await fetch(seriesURL, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
+    if (!response.ok) {
+      return res.status(404).json({ error: "Series not found" });
+    }
+
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const title = $("title").first().text().trim();
+    // 2) Title
+    const title = $("h1.entry-title").text().trim() || slug.replace(/-/g, " ");
 
-    // Get seasons
+    // 3) Seasons (detect from the dropdown)
     const seasons = [];
-    $(".choose-season .aa-cnt li.sel-temp a").each((i, el) => {
-      const seasonNum = $(el).attr("data-season");
-      if (seasonNum) {
-        seasons.push(Number(seasonNum));
+    $(".choose-season .aa-cnt li.sel-temp a").each((_, el) => {
+      const num = parseInt($(el).attr("data-season"));
+      if (!isNaN(num)) seasons.push(num);
+    });
+    const total_seasons = seasons.length || 1;
+    const current_season = seasons[0] || 1;
+
+    // 4) Episodes for current season
+    const episodes = [];
+    $("#episode_by_temp li").each((_, li) => {
+      const num   = $(li).find(".num-epi").text().trim();          // e.g. "1x3"
+      const name  = $(li).find("h2.entry-title").text().trim();    // e.g. "Rent-a-Girlfriend 1x3"
+      const url   = $(li).find("a.lnk-blk").attr("href");          // full URL
+
+      if (num && name && url) {
+        episodes.push({
+          number: num,
+          title: name,
+          url: new URL(url, baseURL).pathname
+        });
       }
     });
 
-    const total_seasons = seasons.length;
-    const current_season = seasons.includes(Number(season)) ? Number(season) : (seasons[0] || 1);
+    // 5) Return JSON
+    res.status(200).json({
+      status: "ok",
+      title,
+      total_seasons,
+      current_season,
+      total_episodes: episodes.length,
+      episodes
+    });
 
-    const episodes = [];
-    $("#episode_by_temp li").each((i, el) => {
-      const seasonEpisode = $(el).find(".num-epi").text().trim(); // e.g. "1x1"
-      const name = $(el).find("h2.entry-title").text().trim();
-      const href = $(el).find("a.lnk-blk").attr("href");
-
-      if (seasonEpisode && name && href) {
-        episodes.push({
-          number: seasonEpisode,
-          title: name,
-          url: href
+  } catch (err) {
+    res.status(500).json({ error: "Scraping failed", details: err.message });
+  }
+}          url: href
         });
       }
     });
