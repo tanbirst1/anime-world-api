@@ -1,40 +1,57 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-function fixURL(url) {
-  if (!url) return "";
-  if (url.startsWith("//")) return "https:" + url;
-  if (url.startsWith("/")) return "https://watchanimeworld.in" + url;
-  return url;
-}
-
 export default async function handler(req, res) {
+  const { slug, season = 1 } = req.query;
+  const url = `https://watchanimeworld.in/${slug}/`;
+
   try {
-    const { slug, season = "1" } = req.query;
-    if (!slug) return res.status(400).json({ error: "Missing slug" });
-
-    const baseURL = "https://watchanimeworld.in";
-    const seriesURL = `${baseURL}/series/${slug}/`;
-
-    const response = await fetch(seriesURL, {
-      headers: { "User-Agent": "Mozilla/5.0" }
-    });
-
-    if (!response.ok) {
-      return res.status(404).json({ error: "Series not found" });
-    }
-
+    const response = await fetch(url);
     const html = await response.text();
     const $ = cheerio.load(html);
 
-    const title = $("h1.entry-title").text().trim() || slug.replace(/-/g, " ");
-    const poster =
-      fixURL(
-        $("meta[property='og:image']").attr("content") ||
-        $(".post-thumbnail img").attr("src") ||
-        $(".entry-header img").attr("src")
-      ) || "";
-    const description =
+    const title = $("title").first().text().trim();
+
+    // Get seasons
+    const seasons = [];
+    $(".choose-season .aa-cnt li.sel-temp a").each((i, el) => {
+      const seasonNum = $(el).attr("data-season");
+      if (seasonNum) {
+        seasons.push(Number(seasonNum));
+      }
+    });
+
+    const total_seasons = seasons.length;
+    const current_season = seasons.includes(Number(season)) ? Number(season) : (seasons[0] || 1);
+
+    const episodes = [];
+    $("#episode_by_temp li").each((i, el) => {
+      const seasonEpisode = $(el).find(".num-epi").text().trim(); // e.g. "1x1"
+      const name = $(el).find("h2.entry-title").text().trim();
+      const href = $(el).find("a.lnk-blk").attr("href");
+
+      if (seasonEpisode && name && href) {
+        episodes.push({
+          number: seasonEpisode,
+          title: name,
+          url: href
+        });
+      }
+    });
+
+    res.status(200).json({
+      title,
+      total_seasons,
+      current_season,
+      total_episodes: episodes.length,
+      episodes
+    });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch episode data" });
+  }
+}    const description =
       $(".description p").first().text().trim() ||
       $("meta[name='description']").attr("content") ||
       "";
