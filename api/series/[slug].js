@@ -10,7 +10,7 @@ function fixURL(url) {
 
 export default async function handler(req, res) {
   try {
-    const { slug } = req.query;
+    const { slug, season = "1" } = req.query;
     if (!slug) return res.status(400).json({ error: "Missing slug" });
 
     const baseURL = "https://watchanimeworld.in";
@@ -35,6 +35,52 @@ export default async function handler(req, res) {
     );
     const description =
       $(".description p").first().text().trim() ||
+      $("meta[name='description']").attr("content") ||
+      "";
+
+    const episodes = [];
+    const seasonSet = new Set();
+
+    $("a[href*='/episode/']").each((_, el) => {
+      const link = $(el).attr("href");
+      const name = $(el).text().trim();
+      const fullURL = new URL(link, baseURL).pathname;
+
+      const match = link.match(/-(\d+)x(\d+)\//);
+      if (match) {
+        const [_, s, ep] = match;
+        const seasonNum = parseInt(s);
+        seasonSet.add(seasonNum);
+
+        if (seasonNum === parseInt(season)) {
+          const thumb = $(el).find("img").attr("src") ||
+                        $(el).parent().find("img").attr("src") ||
+                        "";
+
+          episodes.push({
+            name: `Episode ${ep}`,
+            url: fullURL,
+            poster: fixURL(thumb)
+          });
+        }
+      }
+    });
+
+    const totalSeasons = seasonSet.size > 0 ? Math.max(...seasonSet) : 1;
+
+    res.status(200).json({
+      status: "ok",
+      title,
+      poster,
+      description,
+      total_seasons: totalSeasons,
+      current_season: parseInt(season),
+      episodes
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Scraping failed", details: err.message });
+  }
+}      $(".description p").first().text().trim() ||
       $("meta[name='description']").attr("content") ||
       "";
 
