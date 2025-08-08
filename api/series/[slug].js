@@ -1,4 +1,3 @@
-
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
@@ -15,9 +14,9 @@ export default async function handler(req, res) {
     if (!slug) return res.status(400).json({ error: "Missing slug" });
 
     const baseURL = "https://watchanimeworld.in";
-    const pageURL = `${baseURL}/series/${slug}/`;
+    const seriesURL = `${baseURL}/series/${slug}/`;
 
-    const response = await fetch(pageURL, {
+    const response = await fetch(seriesURL, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
 
@@ -34,23 +33,36 @@ export default async function handler(req, res) {
       $(".post-thumbnail img").attr("src") ||
       $(".entry-header img").attr("src")
     );
+    const description =
+      $(".description p").first().text().trim() ||
+      $("meta[name='description']").attr("content") ||
+      "";
 
-    const description = $(".description p").first().text().trim() ||
-                        $("meta[name='description']").attr("content") || "";
-
-    // Detect total seasons from links
-    let totalSeasons = 1;
-    const links = $("a[href*='/episode/']").map((i, el) => $(el).attr("href")).get();
-
+    const episodes = [];
     const seasonSet = new Set();
-    links.forEach(link => {
-      const m = link.match(/-(\d+)x\d+\//);
-      if (m) seasonSet.add(parseInt(m[1]));
+
+    $("a[href*='/episode/']").each((_, el) => {
+      const link = $(el).attr("href");
+      const name = $(el).text().trim();
+      const fullURL = new URL(link, baseURL).pathname;
+
+      // Detect season
+      const match = link.match(/-(\d+)x\d+\//);
+      if (match) seasonSet.add(parseInt(match[1]));
+
+      // Try to get episode thumbnail if exists (usually inside a parent element)
+      const thumb = $(el).find("img").attr("src") ||
+                    $(el).parent().find("img").attr("src") ||
+                    "";
+
+      episodes.push({
+        name: name || fullURL.split("/").filter(Boolean).pop().replace(/-/g, " "),
+        url: fullURL,
+        poster: fixURL(thumb)
+      });
     });
 
-    if (seasonSet.size > 0) {
-      totalSeasons = Math.max(...Array.from(seasonSet));
-    }
+    const totalSeasons = seasonSet.size > 0 ? Math.max(...seasonSet) : 1;
 
     res.status(200).json({
       status: "ok",
@@ -59,9 +71,8 @@ export default async function handler(req, res) {
       description,
       total_seasons: totalSeasons,
       current_season: 1,
-      current_episode: 1
+      episodes
     });
-
   } catch (err) {
     res.status(500).json({ error: "Scraping failed", details: err.message });
   }
