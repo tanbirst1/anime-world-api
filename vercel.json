@@ -3,9 +3,9 @@
   "routes": [
     { "src": "^/series/page/?$", "dest": "/api/series/page.js" },
     { "src": "^/series/page/([0-9]+)$", "dest": "/api/series/page.js?page=$1" },
-
-    { "src": "^/series/([^/]+)/([0-9]+)$", "dest": "/api/series/season.js?slug=$1&season=$2" },
+    { "src": "^/series/([^/]+)/([0-9]+)$", "dest": "/api/series/[slug].js?slug=$1&season=$2" },
     { "src": "^/series/([^/]+)$", "dest": "/api/series/[slug].js?slug=$1" },
+    { "src": "^/series/(.*)$", "dest": "/api/series/[slug].js?slug=$1" },
 
     { "src": "^/movies/page/?$", "dest": "/api/movies/page.js" },
     { "src": "^/movies/page/([0-9]+)$", "dest": "/api/movies/page.js?page=$1" },
