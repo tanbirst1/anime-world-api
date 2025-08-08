@@ -1,73 +1,60 @@
-import fetch from "node-fetch";
-import * as cheerio from "cheerio";
+import { NextResponse } from 'next/server';
+import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
+  const { slug, season = '1' } = req.query;
+
   try {
-    const { slug, season = "1" } = req.query;
-    const seasonNum = parseInt(season, 10);
+    // Remove trailing slash if present
+    const cleanSlug = slug.replace(/\/$/, '');
 
-    if (!slug) {
-      return res.status(400).json({ error: "Slug missing" });
+    // Construct base episode URL
+    const episodeBaseURL = `https://api.consumet.org/anime/gogoanime/${cleanSlug}-1x1`;
+
+    // Fetch the first episode to determine the internal anime ID
+    const firstEpisodeRes = await fetch(episodeBaseURL);
+    const firstEpisodeData = await firstEpisodeRes.json();
+
+    if (!firstEpisodeData || firstEpisodeData.error) {
+      return res.status(404).json({ error: 'Series not found or invalid slug' });
     }
-    if (isNaN(seasonNum) || seasonNum < 1) {
-      return res.status(400).json({ error: "Invalid season number" });
+
+    const internalId = firstEpisodeData.id.split('-episode-')[0];
+
+    // Fetch all episodes using internal ID
+    const episodesRes = await fetch(`https://api.consumet.org/anime/gogoanime/info/${internalId}`);
+    const episodesData = await episodesRes.json();
+
+    if (!episodesData || episodesData.error) {
+      return res.status(404).json({ error: 'Failed to fetch episode info' });
     }
 
-    const baseURL = "https://watchanimeworld.in";
+    const allEpisodes = episodesData.episodes || [];
+    const totalEpisodes = allEpisodes.length;
 
-    // 1) Scrape the series page to get total seasons
-    const seriesURL = `${baseURL}/series/${slug}`.replace(/\/+$/, "");
-    const seriesResp = await fetch(seriesURL, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
-    if (!seriesResp.ok) {
-      return res.status(404).json({ error: "Series not found", slug });
+    // Group episodes into seasons of 12
+    const episodesPerSeason = 12;
+    const totalSeasons = Math.ceil(totalEpisodes / episodesPerSeason);
+    const currentSeason = parseInt(season);
+
+    if (currentSeason < 1 || currentSeason > totalSeasons) {
+      return res.status(400).json({ error: 'Invalid season number' });
     }
-    const seriesHtml = await seriesResp.text();
-    const $series = cheerio.load(seriesHtml);
 
-    // Look for the season links in the dropdown
-    const seasonEls = $series("div.aa-drp.choose-season ul.aa-cnt.sub-menu li a");
-    const totalSeasons = seasonEls.length || 1;
+    // Slice the episodes for the current season
+    const start = (currentSeason - 1) * episodesPerSeason;
+    const end = start + episodesPerSeason;
+    const currentEpisodes = allEpisodes.slice(start, end);
 
-    // 2) Fetch that season's ep1 page
-    const epSlug = `${slug}-${seasonNum}x1`;
-    const epiURL = `${baseURL}/episode/${epSlug}`.replace(/\/+$/, "");
-    const epiResp = await fetch(epiURL, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-    });
-    if (!epiResp.ok) {
-      return res.status(404).json({
-        error: "Episode page not found",
-        tried: epiURL,
-      });
-    }
-    const epiHtml = await epiResp.text();
-    const $ = cheerio.load(epiHtml);
-
-    // 3) Extract episodes list for that season
-    const episodes = [];
-    $("#episode_by_temp li").each((_, el) => {
-      const epNum = $(el).find(".num-epi").text().trim();
-      const epName = $(el).find(".entry-title").text().trim();
-      const epThumb = $(el).find("img").attr("src") || "";
-      const epUrl = ($(el).find("a.lnk-blk").attr("href") || "").replace(/\/+$/, "");
-      episodes.push({ episode: epNum, title: epName, thumbnail: epThumb, url: epUrl });
-    });
-
-    return res.status(200).json({
-      status:        "ok",
-      currentSeason: seasonNum,
+    return res.json({
+      title: episodesData.title,
+      image: episodesData.image,
+      description: episodesData.description,
       totalSeasons,
-      totalEpisodes: episodes.length,
-      episodes,
+      currentSeason,
+      episodes: currentEpisodes,
     });
-
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({
-      error:   "Internal error",
-      details: err.message,
-    });
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }
