@@ -2,6 +2,10 @@ import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
 export default async function handler(req, res) {
+  return getSeasonData(req, res, 1);
+}
+
+async function getSeasonData(req, res, seasonNumber = 1) {
   try {
     let { slug } = req.query;
     if (!slug) return res.status(400).json({ error: "Slug missing" });
@@ -38,11 +42,14 @@ export default async function handler(req, res) {
 
     const $ = cheerio.load(html);
 
-    const episodeTitle = $(".video-player div").first().text().trim() || "Unknown Episode";
-    const currentEpisode = $(".num-epi").first().text().trim() || "";
+    const seasonBlocks = $(".bixbox.animefull > .bixbox").find("ul#episode_by_temp");
+    const totalSeasons = seasonBlocks.length || 1;
+    const currentSeason = Math.min(seasonNumber, totalSeasons);
+
+    const targetSeason = seasonBlocks.eq(currentSeason - 1);
 
     let episodes = [];
-    $("#episode_by_temp li").each((i, el) => {
+    targetSeason.find("li").each((i, el) => {
       let epNum = $(el).find(".num-epi").text().trim();
       let epName = $(el).find(".entry-title").text().trim();
       let epThumb = $(el).find("img").attr("src") || "";
@@ -52,9 +59,10 @@ export default async function handler(req, res) {
 
     res.status(200).json({
       status: "ok",
+      slug,
       usedSlug,
-      episodeTitle,
-      currentEpisode,
+      currentSeason,
+      totalSeasons,
       episodes
     });
 
@@ -65,3 +73,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
+export { getSeasonData };
