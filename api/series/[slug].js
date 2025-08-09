@@ -6,15 +6,14 @@ export default async function handler(req, res) {
   try {
     const { slug, season } = req.query;
     const seasonNum = season ? parseInt(season, 10) : 1;
+    const baseURL = "https://watchanimeworld.in";
 
     if (!slug || isNaN(seasonNum) || seasonNum < 1) {
       return res.status(400).json({ error: "Invalid slug or season" });
     }
 
-    const baseURL = "https://watchanimeworld.in";
-
-    // 1) Fetch the main series page
-    const seriesURL = `${baseURL}/series/${slug}`.replace(/\/+$/, "");
+    // 1) Always start from the base series page
+    const seriesURL = `${baseURL}/series/${slug}/`;
     const seriesRes = await fetch(seriesURL, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
@@ -26,92 +25,65 @@ export default async function handler(req, res) {
     const seriesHtml = await seriesRes.text();
     const $series = cheerio.load(seriesHtml);
 
-    // 2) Find total seasons & URL for selected season
+    // 2) Detect seasons and select one
     let totalSeasons = 1;
     let seasonFirstEpUrl = null;
 
     $series("div.aa-drp.choose-season ul.aa-cnt.sub-menu li a").each((_, el) => {
       const s = parseInt($series(el).attr("data-season"), 10);
       if (!isNaN(s) && s > totalSeasons) totalSeasons = s;
-
       if (s === seasonNum && !seasonFirstEpUrl) {
-        seasonFirstEpUrl = $series(el).attr("href");
+        seasonFirstEpUrl = new URL($series(el).attr("href"), baseURL).href;
       }
     });
 
-    // Fallback: if season 1 and no menu link, try first episode in list
-    if (!seasonFirstEpUrl && seasonNum === 1) {
-      const firstEp = $series("#episode_by_temp li a.lnk-blk").first().attr("href");
-      if (firstEp) seasonFirstEpUrl = firstEp;
-    }
-
+    // 3) If no season menu, fallback to episode list
     if (!seasonFirstEpUrl) {
-      return res.status(404).json({
-        error: "Season not found",
-        season: seasonNum
-      });
-    }
-
-    // 3) Normalize seasonFirstEpUrl to a full link
-    if (!seasonFirstEpUrl.startsWith("http")) {
-      seasonFirstEpUrl = `${baseURL}${seasonFirstEpUrl.replace(/^\/+/, "")}`;
-    }
-
-    // 4) If this URL is a season page, find its first episode link
-    if (seasonFirstEpUrl.includes(`/series/`)) {
-      const seasonPageRes = await fetch(seasonFirstEpUrl, {
-        headers: { "User-Agent": "Mozilla/5.0" }
-      });
-      const seasonPageHtml = await seasonPageRes.text();
-      const $seasonPage = cheerio.load(seasonPageHtml);
-      const firstEpLink = $seasonPage("#episode_by_temp li a.lnk-blk").first().attr("href");
-
-      if (firstEpLink) {
-        seasonFirstEpUrl = firstEpLink.startsWith("http")
-          ? firstEpLink
-          : `${baseURL}${firstEpLink.replace(/^\/+/, "")}`;
+      const allEps = $series("#episode_by_temp li a.lnk-blk");
+      if (!allEps.length) {
+        return res.status(404).json({ error: "No episodes found" });
       }
+      seasonFirstEpUrl = new URL($series(allEps[0]).attr("href"), baseURL).href;
     }
 
-    // 5) Fetch first episode page to list all episodes in the season
+    // 4) Fetch the first episode page of that season
     const epiRes = await fetch(seasonFirstEpUrl, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
     if (!epiRes.ok) {
-      return res.status(404).json({
-        error: "Episode page not found",
-        tried: seasonFirstEpUrl
-      });
+      return res.status(404).json({ error: "Episode page not found" });
     }
 
     const epiHtml = await epiRes.text();
     const $ = cheerio.load(epiHtml);
 
-    // 6) Extract episode list
+    // 5) Extract all episodes in season
     const episodes = [];
     $("#episode_by_temp li").each((_, el) => {
-      const $el = $(el);
-      episodes.push({
-        episode:   $el.find(".num-epi").text().trim(),
-        title:     $el.find(".entry-title").text().trim(),
-        thumbnail: $el.find("img").attr("src") || "",
-        url:       ($el.find("a.lnk-blk").attr("href") || "").replace(/\/+$/, "")
-      });
+      const epNum = $(el).find(".num-epi").text().trim();
+      const epTitle = $(el).find(".entry-title").text().trim();
+      const thumb = $(el).find("img").attr("src") || "";
+      const link = $(el).find("a.lnk-blk").attr("href") || "";
+      if (link) {
+        episodes.push({
+          episode: epNum,
+          title: epTitle,
+          thumbnail: thumb,
+          url: new URL(link, baseURL).href
+        });
+      }
     });
 
     return res.status(200).json({
-      status:         "ok",
-      currentSeason:  seasonNum,
+      status: "ok",
+      currentSeason: seasonNum,
       totalSeasons,
-      totalEpisodes:  episodes.length,
+      totalEpisodes: episodes.length,
       episodes
     });
 
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
-      error:   "Server error",
-      details: err.message
-    });
+    return res.status(500).json({ error: "Server error", details: err.message });
   }
 }
