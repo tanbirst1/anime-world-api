@@ -1,44 +1,43 @@
-import axios from 'axios';
+import fetch from 'node-fetch';
 import * as cheerio from 'cheerio';
 
 export default async function handler(req, res) {
   try {
-    const url = 'https://watchanimeworld.in/series/naruto/';
-    const { data: html } = await axios.get(url, {
+    const baseUrl = 'https://watchanimeworld.in/series/naruto/';
+    const html = await (await fetch(baseUrl, {
       headers: { 'User-Agent': 'Mozilla/5.0' }
-    });
-
+    })).text();
     const $ = cheerio.load(html);
 
-    // Grab season list
+    // Extract seasons from dropdown list
     const seasons = [];
     $('li.sel-temp a').each((_, el) => {
-      const seasonNum = $(el).attr('data-season');
       seasons.push({
-        season: seasonNum,
+        season: $(el).attr('data-season'),
         postId: $(el).attr('data-post'),
         name: $(el).text().trim()
       });
     });
 
-    // For each season, fetch episodes count
     const results = [];
-    for (const season of seasons) {
-      const seasonUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_name&post=${season.postId}&season=${season.season}`;
+
+    // Fetch episodes per season via AJAX endpoint
+    for (const s of seasons) {
       try {
-        const { data: seasonHtml } = await axios.get(seasonUrl, {
+        const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_name&post=${s.postId}&season=${s.season}`;
+        const seasonHtml = await (await fetch(ajaxUrl, {
           headers: { 'User-Agent': 'Mozilla/5.0' }
-        });
+        })).text();
         const $$ = cheerio.load(seasonHtml);
         const totalEpisodes = $$('li.mark-ep').length;
-        results.push({ season: season.name, totalEpisodes });
-      } catch {
-        results.push({ season: season.name, totalEpisodes: 0 });
+        results.push({ season: s.name, totalEpisodes });
+      } catch (e) {
+        results.push({ season: s.name, totalEpisodes: 0, error: e.message });
       }
     }
 
-    return res.status(200).json(results);
+    res.status(200).json(results);
   } catch (err) {
-    return res.status(500).json({ error: 'Scraper failed', details: err.message });
+    res.status(500).json({ error: 'Scraper failed', details: err.message });
   }
 }
