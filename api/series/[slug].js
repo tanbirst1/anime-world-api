@@ -14,7 +14,7 @@ export default async function handler(req, res) {
 
     const baseURL = "https://watchanimeworld.in";
 
-    // 1) Scrape series page to find totalSeasons (max data-season)
+    // 1) Scrape series page to find totalSeasons & first episode for given season
     const seriesURL = `${baseURL}/series/${slug}`.replace(/\/+$/, "");
     const seriesRes = await fetch(seriesURL, {
       headers: { "User-Agent": "Mozilla/5.0" }
@@ -28,28 +28,59 @@ export default async function handler(req, res) {
 
     // Find all season links and take the highest data-season attribute
     let totalSeasons = 1;
+    let seasonFirstEpUrl = null;
+
     $series("div.aa-drp.choose-season ul.aa-cnt.sub-menu li a").each((_, el) => {
       const s = parseInt($series(el).attr("data-season"), 10);
       if (!isNaN(s) && s > totalSeasons) totalSeasons = s;
+
+      if (s === seasonNum && !seasonFirstEpUrl) {
+        seasonFirstEpUrl = $series(el).attr("href");
+      }
     });
 
-    // 2) Fetch season's Episode 1 page to list episodes
-    const epSlug = `${slug}-${seasonNum}x1`;
-    const epiURL = `${baseURL}/episode/${epSlug}`.replace(/\/+$/, "");
-    const epiRes = await fetch(epiURL, {
+    if (!seasonFirstEpUrl) {
+      return res.status(404).json({
+        error: "Season not found",
+        season: seasonNum
+      });
+    }
+
+    // 2) If link is a series-season page, get first episode link
+    if (seasonFirstEpUrl.includes(`/series/`)) {
+      const seasonPageRes = await fetch(`${baseURL}${seasonFirstEpUrl}`, {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      });
+      const seasonPageHtml = await seasonPageRes.text();
+      const $seasonPage = cheerio.load(seasonPageHtml);
+      const firstEpLink = $seasonPage("#episode_by_temp li a.lnk-blk")
+        .first()
+        .attr("href");
+      if (firstEpLink) {
+        seasonFirstEpUrl = firstEpLink;
+      }
+    }
+
+    // Ensure we have a clean full URL
+    const firstEpFullUrl = seasonFirstEpUrl.startsWith("http")
+      ? seasonFirstEpUrl
+      : `${baseURL}${seasonFirstEpUrl}`;
+
+    // 3) Fetch that episode page to list all episodes
+    const epiRes = await fetch(firstEpFullUrl, {
       headers: { "User-Agent": "Mozilla/5.0" }
     });
     if (!epiRes.ok) {
       return res.status(404).json({
-        error: "Season or episode not found",
-        tried: epiURL
+        error: "Episode page not found",
+        tried: firstEpFullUrl
       });
     }
 
     const epiHtml = await epiRes.text();
     const $ = cheerio.load(epiHtml);
 
-    // 3) Extract all episodes for that season
+    // 4) Extract all episodes for that season
     const episodes = [];
     $("#episode_by_temp li").each((_, el) => {
       const $el = $(el);
