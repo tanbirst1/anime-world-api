@@ -1,50 +1,44 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-async function getSeasonData(url) {
+export default async function handler(req, res) {
   try {
-    const html = await fetch(url).then(res => res.text());
+    const seriesUrl = "https://watchanimeworld.in/series/naruto/";
+    const html = await fetch(seriesUrl).then(r => r.text());
     const $ = cheerio.load(html);
 
-    // Extract postId from HTML (data-post attribute or hidden input)
-    let postId = $('[data-post]').attr('data-post') || $('input[name="post_id"]').val();
-    if (!postId) throw new Error("Post ID not found");
+    // Find dropdown
+    const dropdown = $("select#select_season");
+    if (!dropdown.length) {
+      return res.status(500).json({ error: "Season dropdown not found" });
+    }
 
-    // Get available seasons from dropdown
-    let seasons = [];
-    $('select#season option').each((i, el) => {
-      let seasonVal = $(el).attr('value');
-      if (seasonVal) seasons.push(seasonVal);
-    });
-    if (!seasons.length) throw new Error("No seasons found");
+    const postId = dropdown.attr("data-post");
+    if (!postId) {
+      return res.status(500).json({ error: "postId not found" });
+    }
 
-    // Use the last (latest) season
-    let latestSeason = seasons[seasons.length - 1];
+    let result = {};
 
-    // Make the AJAX request
-    const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${postId}&season=${latestSeason}`;
-    const seasonHtml = await fetch(ajaxUrl).then(res => res.text());
+    // Loop seasons
+    for (let option of dropdown.find("option")) {
+      const seasonNum = $(option).attr("value");
+      if (!seasonNum) continue;
 
-    // Parse episodes
-    const $$ = cheerio.load(seasonHtml);
-    let episodes = [];
-    $$('.episodiotitle').each((i, el) => {
-      episodes.push({
-        title: $$(el).text().trim(),
-        link: $$(el).find('a').attr('href')
-      });
-    });
+      const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${postId}&season=${seasonNum}`;
+      try {
+        const seasonHtml = await fetch(ajaxUrl).then(r => r.text());
+        const $$ = cheerio.load(seasonHtml);
+        const episodeCount = $$("li.video-block").length;
 
-    return {
-      postId,
-      latestSeason,
-      totalEpisodes: episodes.length,
-      episodes
-    };
+        result[`Season ${seasonNum}`] = episodeCount;
+      } catch (e) {
+        result[`Season ${seasonNum}`] = "error";
+      }
+    }
+
+    return res.status(200).json(result);
   } catch (err) {
-    return { error: err.message };
+    return res.status(500).json({ error: err.message });
   }
 }
-
-// Example usage
-getSeasonData("https://watchanimeworld.in/series/naruto/").then(console.log);
