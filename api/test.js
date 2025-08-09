@@ -1,53 +1,41 @@
-import fetch from 'node-fetch';
-import * as cheerio from 'cheerio';
+import fetch from "node-fetch";
+import * as cheerio from "cheerio";
 
-export default async function handler(req, res) {
-  try {
-    const url = 'https://watchanimeworld.in/series/naruto/';
-    const html = await (await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
-    const $ = cheerio.load(html);
+async function fetchSeason(postId, seasonNumber) {
+    const formData = new URLSearchParams();
+    formData.append("action", "action_select_season");
+    formData.append("post", postId);
+    formData.append("season", seasonNumber);
 
-    // Extract all seasons
-    const seasons = [];
-    $('li.sel-temp a').each((_, el) => {
-      seasons.push({
-        season: $(el).attr('data-season'),
-        postId: $(el).attr('data-post'),
-        name: $(el).text().trim(),
-        isActive: $(el).parent().hasClass('active') || $(el).parent().hasClass('selected')
-      });
+    const res = await fetch("https://watchanimeworld.in/wp-admin/admin-ajax.php", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "Mozilla/5.0"
+        },
+        body: formData
     });
 
-    const results = [];
+    const html = await res.text();
+    const $ = cheerio.load(html);
 
-    for (const s of seasons) {
-      let totalEpisodes = 0;
+    let episodes = [];
+    $(".episode-item").each((_, el) => {
+        episodes.push({
+            title: $(el).find(".episode-title").text().trim(),
+            url: $(el).find("a").attr("href")
+        });
+    });
 
-      if (s.isActive) {
-        // Already loaded season in HTML
-        totalEpisodes = $('#episode_by_temp li').length;
-      } else {
-        // Fetch via correct AJAX endpoint
-        const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${s.postId}&season=${s.season}`;
-        try {
-          const seasonHtml = await (await fetch(ajaxUrl, {
-            headers: { 'User-Agent': 'Mozilla/5.0' }
-          })).text();
-          const $$ = cheerio.load(seasonHtml);
-          totalEpisodes = $$('#episode_by_temp li').length;
-        } catch (err) {
-          console.error(`Failed to fetch season ${s.season}:`, err.message);
-        }
-      }
-
-      results.push({
-        season: s.name,
-        totalEpisodes
-      });
-    }
-
-    res.status(200).json(results);
-  } catch (err) {
-    res.status(500).json({ error: 'Scraper failed', details: err.message });
-  }
+    return episodes;
 }
+
+// Example usage:
+(async () => {
+    const postId = "12345"; // get this dynamically from main page
+    const seasons = [1, 2, 3]; // get this dynamically
+    for (let season of seasons) {
+        let eps = await fetchSeason(postId, season);
+        console.log(`Season ${season}:`, eps);
+    }
+})();
