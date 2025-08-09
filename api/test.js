@@ -7,7 +7,7 @@ export default async function handler(req, res) {
     const html = await (await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
     const $ = cheerio.load(html);
 
-    // Extract all seasons from dropdown
+    // Extract all seasons
     const seasons = [];
     $('li.sel-temp a').each((_, el) => {
       seasons.push({
@@ -24,13 +24,15 @@ export default async function handler(req, res) {
       let totalEpisodes = 0;
 
       if (s.isActive) {
-        // This is the season currently loaded in HTML
+        // Already loaded season in HTML
         totalEpisodes = $('#episode_by_temp li').length;
       } else {
-        // Other seasons require AJAX call
-        const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_name&post=${s.postId}&season=${s.season}`;
+        // Fetch via correct AJAX endpoint
+        const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${s.postId}&season=${s.season}`;
         try {
-          const seasonHtml = await (await fetch(ajaxUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
+          const seasonHtml = await (await fetch(ajaxUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0' }
+          })).text();
           const $$ = cheerio.load(seasonHtml);
           totalEpisodes = $$('#episode_by_temp li').length;
         } catch (err) {
