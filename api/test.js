@@ -1,55 +1,50 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
 
-export default async function handler(req, res) {
+async function getSeasonData(url) {
   try {
-    const { slug } = req.query;
-    if (!slug) {
-      return res.status(400).json({ error: "Missing slug" });
-    }
-
-    // 1. Get the anime page
-    const pageResp = await fetch(`https://watchanimeworld.in/series/${slug}/`);
-    const html = await pageResp.text();
+    const html = await fetch(url).then(res => res.text());
     const $ = cheerio.load(html);
 
-    // 2. Extract post ID from "data-post" or from inline scripts
-    let postId = $("body").attr("data-postid");
-    if (!postId) {
-      const scriptContent = $('script:contains("post_id")').html() || "";
-      const match = scriptContent.match(/post_id\s*:\s*(\d+)/);
-      if (match) postId = match[1];
-    }
+    // Extract postId from HTML (data-post attribute or hidden input)
+    let postId = $('[data-post]').attr('data-post') || $('input[name="post_id"]').val();
+    if (!postId) throw new Error("Post ID not found");
 
-    if (!postId) {
-      return res.status(500).json({ error: "Failed to get postId" });
-    }
+    // Get available seasons from dropdown
+    let seasons = [];
+    $('select#season option').each((i, el) => {
+      let seasonVal = $(el).attr('value');
+      if (seasonVal) seasons.push(seasonVal);
+    });
+    if (!seasons.length) throw new Error("No seasons found");
 
-    // 3. Detect latest season number (fallback to 1)
-    let seasonNumber = $('select#season-selector option').last().val();
-    if (!seasonNumber) seasonNumber = 1;
+    // Use the last (latest) season
+    let latestSeason = seasons[seasons.length - 1];
 
-    // 4. Fetch episodes for that season
-    const episodesResp = await fetch(
-      `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${postId}&season=${seasonNumber}`
-    );
-    const episodesHtml = await episodesResp.text();
-    const $$ = cheerio.load(episodesHtml);
+    // Make the AJAX request
+    const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_select_season&post=${postId}&season=${latestSeason}`;
+    const seasonHtml = await fetch(ajaxUrl).then(res => res.text());
 
-    // 5. Parse episodes
-    const episodes = [];
-    $$(".episode").each((i, el) => {
-      const title = $$(el).find(".title").text().trim();
-      const url = $$(el).find("a").attr("href");
-      episodes.push({ title, url });
+    // Parse episodes
+    const $$ = cheerio.load(seasonHtml);
+    let episodes = [];
+    $$('.episodiotitle').each((i, el) => {
+      episodes.push({
+        title: $$(el).text().trim(),
+        link: $$(el).find('a').attr('href')
+      });
     });
 
-    res.json({
+    return {
       postId,
-      season: seasonNumber,
-      episodes,
-    });
+      latestSeason,
+      totalEpisodes: episodes.length,
+      episodes
+    };
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return { error: err.message };
   }
 }
+
+// Example usage
+getSeasonData("https://watchanimeworld.in/series/naruto/").then(console.log);
