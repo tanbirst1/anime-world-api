@@ -3,13 +3,11 @@ import * as cheerio from 'cheerio';
 
 export default async function handler(req, res) {
   try {
-    const baseUrl = 'https://watchanimeworld.in/series/naruto/';
-    const html = await (await fetch(baseUrl, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
-    })).text();
+    const url = 'https://watchanimeworld.in/series/naruto/';
+    const html = await (await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
     const $ = cheerio.load(html);
 
-    // Extract seasons from dropdown list
+    // Extract dropdown seasons
     const seasons = [];
     $('li.sel-temp a').each((_, el) => {
       seasons.push({
@@ -21,19 +19,28 @@ export default async function handler(req, res) {
 
     const results = [];
 
-    // Fetch episodes per season via AJAX endpoint
     for (const s of seasons) {
-      try {
+      let totalEpisodes = 0;
+
+      if (s.season === '1') {
+        // Season 1 is in the base page
+        totalEpisodes = $('#episode_by_temp li').length;
+      } else {
+        // Other seasons require AJAX call
         const ajaxUrl = `https://watchanimeworld.in/wp-admin/admin-ajax.php?action=action_name&post=${s.postId}&season=${s.season}`;
-        const seasonHtml = await (await fetch(ajaxUrl, {
-          headers: { 'User-Agent': 'Mozilla/5.0' }
-        })).text();
-        const $$ = cheerio.load(seasonHtml);
-        const totalEpisodes = $$('li.mark-ep').length;
-        results.push({ season: s.name, totalEpisodes });
-      } catch (e) {
-        results.push({ season: s.name, totalEpisodes: 0, error: e.message });
+        try {
+          const seasonHtml = await (await fetch(ajaxUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
+          const $$ = cheerio.load(seasonHtml);
+          totalEpisodes = $$('#episode_by_temp li').length;
+        } catch (err) {
+          console.error(`Failed to fetch season ${s.season}:`, err.message);
+        }
       }
+
+      results.push({
+        season: s.name,
+        totalEpisodes
+      });
     }
 
     res.status(200).json(results);
