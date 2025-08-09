@@ -7,13 +7,14 @@ export default async function handler(req, res) {
     const html = await (await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' } })).text();
     const $ = cheerio.load(html);
 
-    // Extract dropdown seasons
+    // Extract all seasons from dropdown
     const seasons = [];
     $('li.sel-temp a').each((_, el) => {
       seasons.push({
         season: $(el).attr('data-season'),
         postId: $(el).attr('data-post'),
-        name: $(el).text().trim()
+        name: $(el).text().trim(),
+        isActive: $(el).parent().hasClass('active') || $(el).parent().hasClass('selected')
       });
     });
 
@@ -22,8 +23,8 @@ export default async function handler(req, res) {
     for (const s of seasons) {
       let totalEpisodes = 0;
 
-      if (s.season === '1') {
-        // Season 1 is in the base page
+      if (s.isActive) {
+        // This is the season currently loaded in HTML
         totalEpisodes = $('#episode_by_temp li').length;
       } else {
         // Other seasons require AJAX call
