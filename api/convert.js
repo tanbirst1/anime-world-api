@@ -1,6 +1,6 @@
 import fetch from "node-fetch";
 
-const TMDB_API_KEY = process.env.9b4fe13859abd1c5439230dcb09bfbbd; // Add in Vercel env
+const TMDB_API_KEY = 9b4fe13859abd1c5439230dcb09bfbbd; // Add in Vercel env
 
 export default async function handler(req, res) {
   try {
