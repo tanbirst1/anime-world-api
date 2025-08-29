@@ -1,78 +1,93 @@
 import fetch from "node-fetch";
 
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
-const HIANIME_API_BASE = "https://hianime-api-production.up.railway.app/api/v1";
-
-function toKebabCase(str = "") {
-  return str
-    .replace(/[’‘]/g, "")        // Remove fancy apostrophes
-    .replace(/[^A-Za-z0-9]+/g, "-") // Replace non-alphanumeric with hyphens
-    .replace(/-+/g, "-")          // Consolidate multiple hyphens
-    .replace(/(^-|-$)/g, "")      // Trim leading/trailing hyphens
-    .toLowerCase();
-}
-
-async function fetchTMDB({ tmdb_id, name, type }) {
-  let tmdbData = null;
-  let finalType = type;
-
-  if (tmdb_id) {
-    const typesToTry = type ? [type] : ["tv", "movie"];
-    for (const t of typesToTry) {
-      const url = `https://api.themoviedb.org/3/${t}/${tmdb_id}?api_key=${TMDB_API_KEY}`;
-      const resp = await fetch(url);
-      if (resp.ok) {
-        tmdbData = await resp.json();
-        finalType = t;
-        break;
-      }
-    }
-    if (!tmdbData) throw { status: 404, error: "TMDB ID not found" };
-  } else if (name) {
-    const searchType = type || "multi";
-    const url = `https://api.themoviedb.org/3/search/${searchType}?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(name)}`;
-    const resp = await fetch(url);
-    const data = await resp.json();
-
-    if (!data.results || data.results.length === 0) {
-      throw { status: 404, error: "No TMDB results found" };
-    }
-
-    tmdbData = data.results[0];
-    finalType = tmdbData.media_type || searchType;
-  }
-
-  const tmdbName = tmdbData.title || tmdbData.name || tmdbData.original_title || tmdbData.original_name;
-  return { tmdbData, finalType, tmdbName };
-}
+const TMDB_API_KEY = process.env.TMDB_API_KEY; // Set in Vercel env
 
 export default async function handler(req, res) {
   try {
-    const { tmdb_id, name, type } = req.query;
+    let { tmdb_id, name, type } = req.query; // type = 'tv' or 'movie'
 
-    if (!tmdb_id && !name) {
-      return res.status(400).json({ error: "Provide either tmdb_id or name" });
+    let animeName = name;
+    let resolvedTmdbId = tmdb_id;
+    let resolvedType = type ? type.toLowerCase() : null; // final type
+
+    // Validate type
+    if (resolvedType && !['tv', 'movie'].includes(resolvedType)) {
+      return res.status(400).json({ error: "Invalid type. Use 'tv' or 'movie'." });
     }
 
-    const { tmdbData, finalType, tmdbName } = await fetchTMDB({ tmdb_id, name, type });
-    const keyword = toKebabCase(tmdbName);
+    // Step 1: If tmdb_id provided → fetch official name + type from TMDB
+    if (tmdb_id) {
+      // Default to TV if type not given
+      const tmdbUrl = `https://api.themoviedb.org/3/${resolvedType || 'tv'}/${tmdb_id}?api_key=${TMDB_API_KEY}&language=en-US`;
+      let tmdbRes = await fetch(tmdbUrl);
 
-    const aniUrl = `${HIANIME_API_BASE}/search?keyword=${keyword}&page=1`;
-    const aniResp = await fetch(aniUrl);
-    const aniJson = await aniResp.json();
+      // If first fetch failed (maybe wrong type), try the other one
+      if (!tmdbRes.ok && !resolvedType) {
+        const fallbackUrl = `https://api.themoviedb.org/3/movie/${tmdb_id}?api_key=${TMDB_API_KEY}&language=en-US`;
+        tmdbRes = await fetch(fallbackUrl);
+      }
 
-    const hianimeResult = aniJson.data?.[0] || aniJson.response?.[0] || null;
+      if (!tmdbRes.ok) {
+        return res.status(400).json({ error: "Invalid TMDB ID or request failed" });
+      }
 
+      const tmdbData = await tmdbRes.json();
+      animeName = tmdbData.name || tmdbData.original_name || tmdbData.title || tmdbData.original_title;
+      resolvedTmdbId = tmdbData.id;
+      resolvedType = tmdbData.media_type || (tmdbData.first_air_date ? "tv" : "movie");
+    }
+
+    // Step 2: If only name provided → search TMDB to get id + correct title + type
+    if (!tmdb_id && animeName) {
+      const searchType = resolvedType || "tv"; // default TV search
+      const tmdbSearchUrl = `https://api.themoviedb.org/3/search/${searchType}?api_key=${TMDB_API_KEY}&language=en-US&query=${encodeURIComponent(animeName)}`;
+      const tmdbSearchRes = await fetch(tmdbSearchUrl);
+      const tmdbSearchData = await tmdbSearchRes.json();
+
+      if (tmdbSearchData.results && tmdbSearchData.results.length > 0) {
+        const bestTmdbMatch = tmdbSearchData.results[0];
+        resolvedTmdbId = bestTmdbMatch.id;
+        animeName = bestTmdbMatch.name || bestTmdbMatch.original_name || bestTmdbMatch.title || bestTmdbMatch.original_title;
+        resolvedType = searchType;
+      } else {
+        resolvedTmdbId = null;
+      }
+    }
+
+    // If neither id nor name works
+    if (!animeName) {
+      return res.status(400).json({ error: "Either tmdb_id or name must be provided" });
+    }
+
+    // Step 3: Search HiAnime API by final name
+    let searchUrl = `https://hianime-orpin.vercel.app/api/v2/hianime/search?q=${encodeURIComponent(animeName)}`;
+    if (resolvedType) searchUrl += `&type=${resolvedType}`;
+
+    const searchRes = await fetch(searchUrl);
+    const searchData = await searchRes.json();
+
+    if (!searchData || !searchData.data || !searchData.data.animes) {
+      return res.status(404).json({ error: "Anime not found on HiAnime" });
+    }
+
+    // Step 4: Match HiAnime title (strict keyword match)
+    const normalizedName = animeName.toLowerCase().trim();
+    const exactMatch = searchData.data.animes.find(anime =>
+      anime.name.toLowerCase().trim() === normalizedName
+    );
+
+    const bestMatch = exactMatch || searchData.data.animes[0];
+
+    // Step 5: Return JSON
     return res.status(200).json({
-      tmdb_id: tmdbData.id,
-      type: finalType,
-      name: tmdbName,
-      hianime_id: hianimeResult?.id || null,
-      hianime_name: hianimeResult?.title || hianimeResult?.name || null,
+      tmdb_id: resolvedTmdbId || null,
+      name: animeName,
+      hianime_id: bestMatch?.id || null,
+      hianime_name: bestMatch?.name || null,
+      type: resolvedType || null
     });
+
   } catch (err) {
-    console.error(err);
-    const code = err.status || 500;
-    return res.status(code).json({ error: err.error || "Server error", details: err.message });
+    return res.status(500).json({ error: err.message });
   }
 }
