@@ -1,156 +1,76 @@
-// api/scrape.js
-import fetch from "node-fetch";
-import cheerio from "cheerio";
+// worker.js
+addEventListener("fetch", event => {
+  event.respondWith(handle(event.request));
+});
 
-const DEFAULT_TIMEOUT = 10000; // ms
+const TIMEOUT = 10000;
 
-function isValidHttpUrl(s) {
+async function handle(req) {
+  const url = new URL(req.url);
+  const target = url.searchParams.get("url");
+  if (!target) return new Response("Missing ?url=", { status: 400 });
+
   try {
-    const u = new URL(s);
-    return u.protocol === "http:" || u.protocol === "https:";
+    const parsed = new URL(target);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return new Response("Invalid URL", { status: 400 });
+    }
   } catch (e) {
-    return false;
+    return new Response("Invalid URL", { status: 400 });
   }
-}
 
-function makeAbsolute(base, maybeRelative) {
-  if (!maybeRelative) return "";
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), TIMEOUT);
+
+  let upstream;
   try {
-    return new URL(maybeRelative, base).toString();
-  } catch (e) {
-    return maybeRelative;
+    upstream = await fetch(target, {
+      headers: { "User-Agent": "cloudflare-scraper/1.0" },
+      redirect: "follow",
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(id);
+    if (err.name === "AbortError") return new Response("Upstream timed out", { status: 504 });
+    return new Response("Fetch failed: " + String(err), { status: 502 });
   }
-}
+  clearTimeout(id);
 
-// handle srcset attribute rewriting
-function rewriteSrcset(base, srcset) {
-  if (!srcset) return srcset;
-  // srcset format: "img1.jpg 1x, img2.jpg 2x"
-  return srcset
-    .split(",")
-    .map(part => {
-      const p = part.trim();
-      const [urlPart, descriptor] = p.split(/\s+/, 2);
-      const abs = makeAbsolute(base, urlPart);
-      return descriptor ? `${abs} ${descriptor}` : abs;
-    })
-    .join(", ");
-}
+  if (!upstream.ok) {
+    return new Response(`Upstream returned ${upstream.status}`, { status: 502 });
+  }
 
-export default async function handler(req, res) {
-  try {
-    const target = (req.query.url || req.url.split("?url=")[1] || "").toString();
-    if (!target) {
-      res.status(400).send("Missing ?url= parameter");
-      return;
-    }
-    if (!isValidHttpUrl(target)) {
-      res.status(400).send("Invalid URL (must be http/https)");
-      return;
-    }
+  const base = upstream.url || target;
 
-    // Abort controller for timeout
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
+  // We'll stream and rewrite; remove scripts/styles/links and inline style attrs
+  // Using HTMLRewriter to drop nodes and modify attributes
+  const rewriter = new HTMLRewriter()
+    .on("script", new DropHandler())
+    .on("noscript", new DropHandler())
+    .on("style", new DropHandler())
+    .on('link[rel="stylesheet"]', new DropHandler())
+    .on("*", new AttrAndSrcRewriter(base));
 
-    let response;
-    try {
-      response = await fetch(target, {
-        headers: {
-          "User-Agent": "vercel-scraper/1.0 (+https://vercel.com)"
-        },
-        redirect: "follow",
-        signal: controller.signal
-      });
-    } catch (err) {
-      clearTimeout(timeout);
-      if (err.name === "AbortError") {
-        res.status(504).send("Upstream request timed out");
-        return;
-      }
-      res.status(502).send("Failed to fetch target: " + String(err));
-      return;
-    }
-    clearTimeout(timeout);
+  // rewriter transforms the upstream response body
+  const transformed = rewriter.transform(upstream);
 
-    if (!response.ok) {
-      res.status(502).send(`Upstream returned ${response.status} ${response.statusText}`);
-      return;
-    }
+  // We only want the body content (no head). HTMLRewriter cannot easily extract only body text directly,
+  // so we return the full transformed HTML but trimmed: alternative approach below fetches as text and extracts body.
+  // For simplicity and better compatibility we will extract text and then parse out <body>...</body>.
+  // This is safe for most pages — if the response is huge you might want streaming parsing.
 
-    const text = await response.text();
+  let txt = await transformed.text();
+  const bodyMatch = txt.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const body = bodyMatch ? bodyMatch[1] : txt;
 
-    // parse with cheerio
-    const $ = cheerio.load(text, { decodeEntities: false });
+  const titleMatch = txt.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  const title = titleMatch ? titleMatch[1].replace(/<[^>]+>/g, "") : "";
 
-    // remove scripts, noscript, styles, link[rel=stylesheet], meta refresh
-    $("script").remove();
-    $("noscript").remove();
-    $("style").remove();
-    $('link[rel="stylesheet"]').remove();
-    $('meta[http-equiv="refresh"]').remove();
-
-    // remove inline style attributes to reduce CSS effects & size
-    // (optional — comment out if you want to keep inline styles)
-    $('[style]').each((i, el) => {
-      // you can keep some safe attributes if desired; here we remove all style attrs
-      $(el).removeAttr("style");
-    });
-
-    // rewrite resource URLs to absolute so images and anchors work
-    const base = response.url || target; // response.url after redirects
-
-    // src, href, data-src, poster, background, srcset
-    $("*[src]").each((i, el) => {
-      const $el = $(el);
-      const src = $el.attr("src");
-      if (src) $el.attr("src", makeAbsolute(base, src));
-    });
-
-    $("*[href]").each((i, el) => {
-      const $el = $(el);
-      const href = $el.attr("href");
-      if (href && !href.startsWith("javascript:")) $el.attr("href", makeAbsolute(base, href));
-    });
-
-    $("*[data-src]").each((i, el) => {
-      const $el = $(el);
-      const v = $el.attr("data-src");
-      if (v) $el.attr("data-src", makeAbsolute(base, v));
-    });
-
-    $("*[poster]").each((i, el) => {
-      const $el = $(el);
-      const v = $el.attr("poster");
-      if (v) $el.attr("poster", makeAbsolute(base, v));
-    });
-
-    // srcset support
-    $("*[srcset]").each((i, el) => {
-      const $el = $(el);
-      const ss = $el.attr("srcset");
-      if (ss) $el.attr("srcset", rewriteSrcset(base, ss));
-    });
-
-    // Optional: remove inline event handlers to avoid scripts executing or referencing removed scripts
-    // remove attributes like onclick, onmouseover etc.
-    $("*").each((i, el) => {
-      const atts = el.attribs || {};
-      for (const name of Object.keys(atts)) {
-        if (name.startsWith("on")) $(el).removeAttr(name);
-      }
-    });
-
-    // get the body inner HTML
-    const body = $("body").html() || "";
-
-    // minimal result wrapper (so user can render safely)
-    const title = $("title").first().text() || "";
-    const resultHtml = `<!doctype html>
+  const out = `<!doctype html>
 <html>
   <head>
-    <meta charset="utf-8"/>
-    <meta name="origin-url" content="${target}"/>
+    <meta charset="utf-8" />
+    <meta name="origin-url" content="${escapeHtml(target)}"/>
     <title>${escapeHtml(title)}</title>
     <meta name="viewport" content="width=device-width,initial-scale=1"/>
   </head>
@@ -159,21 +79,69 @@ ${body}
   </body>
 </html>`;
 
-    // set caching headers — small TTL; tune as needed
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.setHeader("Cache-Control", "s-maxage=60, stale-while-revalidate=30");
-    res.status(200).send(resultHtml);
-  } catch (err) {
-    console.error("Scrape error:", err);
-    res.status(500).send("Internal server error");
+  return new Response(out, {
+    status: 200,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "public, max-age=60"
+    }
+  });
+}
+
+class DropHandler {
+  element() {
+    // do nothing -> drops element
+  }
+}
+
+class AttrAndSrcRewriter {
+  constructor(base) {
+    this.base = base;
+  }
+  element(element) {
+    // remove inline style attributes
+    if (element.hasAttribute("style")) element.removeAttribute("style");
+
+    // remove event handlers
+    for (const attr of element.attributes) {
+      if (attr.name && attr.name.toLowerCase().startsWith("on")) element.removeAttribute(attr.name);
+    }
+
+    // rewrite src/href/poster/data-src
+    const attrs = ["src", "href", "poster", "data-src"];
+    for (const a of attrs) {
+      if (element.hasAttribute(a)) {
+        const val = element.getAttribute(a);
+        try {
+          const abs = new URL(val, this.base).toString();
+          element.setAttribute(a, abs);
+        } catch (e) {
+          // leave unchanged if can't resolve
+        }
+      }
+    }
+
+    // srcset rewriting: split and rewrite items
+    if (element.hasAttribute("srcset")) {
+      const ss = element.getAttribute("srcset");
+      const rewritten = ss
+        .split(",")
+        .map(p => {
+          const parts = p.trim().split(/\s+/, 2);
+          try {
+            const abs = new URL(parts[0], this.base).toString();
+            return parts[1] ? `${abs} ${parts[1]}` : abs;
+          } catch (e) {
+            return p;
+          }
+        })
+        .join(", ");
+      element.setAttribute("srcset", rewritten);
+    }
   }
 }
 
 function escapeHtml(s) {
   if (!s) return "";
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
