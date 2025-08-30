@@ -1,22 +1,5 @@
 import fetch from "node-fetch";
 import * as cheerio from "cheerio";
-import crypto from "crypto";
-
-const SECRET_KEY = crypto.createHash("sha256")
-  .update(process.env.VIDEO_SECRET || "super_secret_key")
-  .digest();
-const IV = Buffer.alloc(16, 0);
-
-function encrypt(url) {
-  try {
-    const cipher = crypto.createCipheriv("aes-256-cbc", SECRET_KEY, IV);
-    let encrypted = cipher.update(url || "", "utf8", "base64");
-    encrypted += cipher.final("base64");
-    return encrypted.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-  } catch {
-    return "";
-  }
-}
 
 export default async function handler(req, res) {
   try {
@@ -53,14 +36,14 @@ export default async function handler(req, res) {
       $("meta[property='og:description']").attr("content") ||
       "";
 
-    // Video servers only (no episode list section)
+    // Video servers only (direct URLs, no encryption)
     let servers = [];
     $(".video-player iframe").each((i, el) => {
       let src = $(el).attr("src") || $(el).attr("data-src") || "";
       if (src.trim()) {
         servers.push({
           server: `Server ${i + 1}`,
-          url: `/v/${encrypt(src)}`
+          url: src   // direct iframe src
         });
       }
     });
